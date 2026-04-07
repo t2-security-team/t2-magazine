@@ -8,8 +8,11 @@ st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 # --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
     <style>
-    .main .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
-    iframe { margin-bottom: 5px !important; min-height: 45px !important; }
+    /* 웹 화면 및 캡처 시 상단 및 요소 간 기본 공백 극한으로 제거 */
+    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -10px !important; }
+    div[data-testid="stVerticalBlock"] { gap: 0px !important; }
+    .element-container { margin-bottom: 0px !important; }
+    iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
     .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: sans-serif; }
     .merged-table tr { border: none !important; } 
@@ -17,8 +20,9 @@ st.markdown("""
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
     
-    .total-banner { background-color: #f0f7ff !important; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 5px; }
-    .carrier-banner { background-color: #ffffff !important; padding: 5px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 10px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+    /* 배너 여백 최소화 */
+    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 3px; margin-top: 5px; }
+    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 5px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
     .carrier-item { font-size: 14px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
     .print-col { flex: 1; min-width: 0; }
@@ -111,7 +115,7 @@ def clean_route(val):
 
 def generate_table_html(df, title, count, color):
     display_title = f"{title} ({count:,}명)"
-    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:5px; margin-bottom:5px;'>{display_title}</h3>"
+    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
     
     df = df.sort_values('시간').reset_index(drop=True)
@@ -260,8 +264,14 @@ else:
                     var oldMainOverflow = mainView ? mainView.style.overflow : '';
                     var oldMainHeight = mainView ? mainView.style.height : '';
 
+                    var oldTargetPaddingTop = target.style.paddingTop;
+                    var oldTargetMarginTop = target.style.marginTop;
+
                     if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                     if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
+
+                    target.style.paddingTop = '0px';
+                    target.style.marginTop = '0px';
 
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                     
@@ -283,6 +293,10 @@ else:
                         }).finally(function() {
                             if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
                             if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
+                            
+                            target.style.paddingTop = oldTargetPaddingTop;
+                            target.style.marginTop = oldTargetMarginTop;
+
                             hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
                             btn.innerText = "📸 전체 사진으로 저장";
                         });
@@ -292,6 +306,7 @@ else:
                 """, height=45
             )
 
+            # 공간을 많이 차지하던 st.divider()를 제거하고 얇은 선(hr)으로 교체했습니다.
             st.markdown(f"""
                 <div class="total-banner"><h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3></div>
                 <div class="carrier-banner">
@@ -299,14 +314,12 @@ else:
                     <span class="carrier-item">OZ: <span style="color:#1E3A8A;">{oz_s:,}</span>명</span>
                     <span class="carrier-item">DL: <span style="color:#1E3A8A;">{dl_s:,}</span>명</span>
                 </div>
+                <hr style="margin: 2px 0 10px 0; border: 0; border-top: 1px solid #e5e7eb;">
             """, unsafe_allow_html=True)
-
-            st.divider()
             
             west_p = final[final['구역'] == '서편']['p_val'].sum()
             east_p = final[final['구역'] == '동편']['p_val'].sum()
             w_html = generate_table_html(final[final['구역'] == '서편'], "⬅️ 서편", west_p, "#DC2626")
             e_html = generate_table_html(final[final['구역'] == '동편'], "➡️ 동편", east_p, "#2563EB")
             
-            # 여기서 동편(e_html)을 먼저 출력, 서편(w_html)을 나중에 출력하도록 순서를 변경했습니다.
             st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
