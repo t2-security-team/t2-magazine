@@ -18,8 +18,8 @@ st.markdown("""
         min-height: 45px !important;
     }
 
-    /* 2. 표 스타일 압축 */
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: 'Malgun Gothic', sans-serif; }
+    /* 2. 표 스타일 압축 (폰트를 모든 기기에서 잘 보이도록 수정) */
+    .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6; padding: 3px; vertical-align: middle; }
     .sum-cell { background-color: #fdfdfd !important; font-weight: bold; color: #1E3A8A; font-size: 12px; }
@@ -167,7 +167,8 @@ with st.sidebar:
     pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     st.divider()
-    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 23))
+    # ✅ 수정됨: 기본값을 0~24시로 꽉 차게 고정
+    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
 
 # --- [메인 로직] ---
 if not (pax_files and gate_files):
@@ -248,7 +249,7 @@ else:
                     border-radius: 6px;
                     cursor: pointer;
                     transition: all 0.2s;
-                    font-family: 'Malgun Gothic', sans-serif;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     box-shadow: 0px 1px 3px rgba(0,0,0,0.1);
                     margin-bottom: 5px;
                 }
