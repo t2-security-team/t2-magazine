@@ -143,7 +143,6 @@ with st.sidebar:
 if not (pax_files and gate_files):
     st.markdown("<h2 style='text-align: center;'>✈️ T2 보안검색 환승부 잡지 ✈️</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
-        # ✅ 이용방법 문구 원본으로 완벽 복구
         st.markdown("""
         ### 1. 파일 업로드 방법
         * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(T/S, Pax) 데이터 업로드
@@ -163,12 +162,10 @@ else:
     for f in pax_files:
         df = smart_read(f)
         if df is not None:
-            # 1. 델타항공 양식인지 먼저 확인 (기능 유지)
             dl_df = parse_dl_pax(df)
             if dl_df is not None:
                 p_all.append(dl_df)
             else:
-                # 2. 일반 세로 양식 (대한항공, 아시아나 등)
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
                 p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
@@ -311,4 +308,5 @@ else:
             w_html = generate_table_html(final[final['구역'] == '서편'], "⬅️ 서편", west_p, "#DC2626")
             e_html = generate_table_html(final[final['구역'] == '동편'], "➡️ 동편", east_p, "#2563EB")
             
-            st.markdown(f'<div class="print-row">{w_html}{e_html}</div>', unsafe_allow_html=True)
+            # 여기서 동편(e_html)을 먼저 출력, 서편(w_html)을 나중에 출력하도록 순서를 변경했습니다.
+            st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
