@@ -11,9 +11,8 @@ st.markdown("""
     .main .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
     iframe { margin-bottom: 5px !important; min-height: 45px !important; }
     
-    /* [수정됨] 표 테두리선 충돌 방지 핵심 코드 */
     .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: sans-serif; }
-    .merged-table tr { border: none !important; } /* Streamlit 기본 가로선(합계칸 관통 원인) 완벽 제거 */
+    .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
@@ -41,6 +40,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- [도구함] ---
+def clean_flight_no(val):
+    if pd.isna(val): return ""
+    val = str(val).strip().replace(" ", "").upper()
+    match = re.match(r'([A-Z]+)(\d+)', val)
+    # [핵심] 여기서 DL027이 들어오면 숫자 앞 0을 제거해 DL27로 변환합니다.
+    if match: return f"{match.group(1)}{int(match.group(2))}"
+    return val
+
 def smart_read(file):
     try:
         filename = file.name.lower()
@@ -52,6 +59,42 @@ def smart_read(file):
         try: return pd.read_excel(file)
         except: return None
 
+def parse_dl_pax(df):
+    if df is None or df.empty: return None
+    
+    all_rows = [df.columns.tolist()] + df.values.tolist()
+    pax_row_idx = -1
+    pax_row_data = []
+    header_row_data = []
+    
+    for i, row in enumerate(all_rows):
+        for cell in row:
+            if str(cell).replace(" ", "").strip() == '환승객':
+                pax_row_idx = i
+                pax_row_data = row
+                break
+        if pax_row_idx != -1: break
+        
+    if pax_row_idx != -1:
+        header_row_data = all_rows[0]
+        dl_data = []
+        for col_idx, cell in enumerate(header_row_data):
+            cell_str = str(cell)
+            if 'DL' in cell_str.upper() and re.search(r'DL\s*\d+', cell_str, re.IGNORECASE):
+                flt_no = re.search(r'(DL\s*\d+)', cell_str, re.IGNORECASE).group(1).replace(" ", "").upper()
+                # ✅ [수정됨] 델타 파일에서도 027을 27로 깔끔하게 정리하여 게이트 파일과 매칭되게 수정
+                flt_no = clean_flight_no(flt_no) 
+                
+                if col_idx < len(pax_row_data):
+                    pax_val = str(pax_row_data[col_idx]).replace(",", "").strip()
+                    try:
+                        pax_count = int(float(pax_val))
+                        dl_data.append({'편명': flt_no, '승객수': pax_count})
+                    except: pass
+        if dl_data:
+            return pd.DataFrame(dl_data)
+    return None
+
 def find_col(df, keywords):
     if df is None or df.empty: return None
     for col in df.columns:
@@ -59,13 +102,6 @@ def find_col(df, keywords):
         for key in keywords:
             if key.upper() in clean_col: return col
     return None
-
-def clean_flight_no(val):
-    if pd.isna(val): return ""
-    val = str(val).strip().replace(" ", "").upper()
-    match = re.match(r'([A-Z]+)(\d+)', val)
-    if match: return f"{match.group(1)}{int(match.group(2))}"
-    return val
 
 def clean_route(val):
     if pd.isna(val): return ""
@@ -111,29 +147,33 @@ if not (pax_files and gate_files):
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
         st.markdown("""
         ### 1. 파일 업로드 방법
-        * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(T/S, Pax) 데이터 업로드
+        * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(대한항공, 델타) 데이터 업로드
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
-        * **-인천공항 도착편 날짜, 시간대 설정 후 총 3개 다운로드 (대한항공, 아시아나, 델타)**
 
-        ### 2. 중요: 파일 형식 필수 변환
-        * 본 시스템은 **.xlsx 형식만 지원**합니다.
-        * **인천공항 도착편** 다운로드 파일은 그대로 올리면 읽히지 않습니다.
-        * **방법:** 파일을 열어 **[다른 이름으로 저장]** → 파일 형식을 **[Excel 통합 문서 (*.xlsx)]**로 선택하여 저장 후 업로드하세요.
+        ### 2. 중요: 파일 형식 필수 변환 및 호환성
+        * **인천공항 도착편** 다운로드 파일은 파일을 열어 **[다른 이름으로 저장] → [Excel 통합 문서 (*.xlsx)]**로 변환 후 업로드하세요.
+        * **[업데이트!] 델타항공 CSV 파일 호환 지원:** 델타에서 온 가로형 CSV 파일도 변환 없이 '1. 승객수 파일'에 올리면 자동으로 환승객 수만 추출해 줍니다.
         """)
 else:
     p_all, g_all = [], []
     for f in pax_files:
         df = smart_read(f)
         if df is not None:
-            f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
-            p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
-            r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
-            if f_c and p_c:
-                tmp = df[[f_c, p_c]].copy()
-                if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
-                tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
-                tmp['편명'] = tmp['편명'].apply(clean_flight_no)
-                p_all.append(tmp)
+            # 1. 델타항공 양식인지 먼저 확인
+            dl_df = parse_dl_pax(df)
+            if dl_df is not None:
+                p_all.append(dl_df)
+            else:
+                # 2. 일반 세로 양식 (대한항공, 아시아나 등)
+                f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+                p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
+                r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+                if f_c and p_c:
+                    tmp = df[[f_c, p_c]].copy()
+                    if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
+                    tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
+                    tmp['편명'] = tmp['편명'].apply(clean_flight_no)
+                    p_all.append(tmp)
 
     for f in gate_files:
         df = smart_read(f)
@@ -166,7 +206,7 @@ else:
             def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
             ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
 
-            # --- 결과 출력 (길게 펴서 캡처하는 기능 추가) ---
+            # --- 결과 출력 ---
             st.components.v1.html(
                 """
                 <style>
@@ -222,7 +262,6 @@ else:
                     if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                     if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
 
-                    // 사이드바 및 버튼 임시 숨김
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                     
                     setTimeout(function() {
@@ -252,7 +291,6 @@ else:
                 """, height=45
             )
 
-            # 표 출력
             st.markdown(f"""
                 <div class="total-banner"><h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3></div>
                 <div class="carrier-banner">
