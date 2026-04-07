@@ -44,7 +44,6 @@ def clean_flight_no(val):
     if pd.isna(val): return ""
     val = str(val).strip().replace(" ", "").upper()
     match = re.match(r'([A-Z]+)(\d+)', val)
-    # [핵심] 여기서 DL027이 들어오면 숫자 앞 0을 제거해 DL27로 변환합니다.
     if match: return f"{match.group(1)}{int(match.group(2))}"
     return val
 
@@ -82,7 +81,6 @@ def parse_dl_pax(df):
             cell_str = str(cell)
             if 'DL' in cell_str.upper() and re.search(r'DL\s*\d+', cell_str, re.IGNORECASE):
                 flt_no = re.search(r'(DL\s*\d+)', cell_str, re.IGNORECASE).group(1).replace(" ", "").upper()
-                # ✅ [수정됨] 델타 파일에서도 027을 27로 깔끔하게 정리하여 게이트 파일과 매칭되게 수정
                 flt_no = clean_flight_no(flt_no) 
                 
                 if col_idx < len(pax_row_data):
@@ -145,21 +143,27 @@ with st.sidebar:
 if not (pax_files and gate_files):
     st.markdown("<h2 style='text-align: center;'>✈️ T2 보안검색 환승부 잡지 ✈️</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
+        # ✅ 이용방법 문구 원본으로 완벽 복구
         st.markdown("""
         ### 1. 파일 업로드 방법
-        * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(대한항공, 델타) 데이터 업로드
+        * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(T/S, Pax) 데이터 업로드
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
+        * **-인천공항 도착편 날짜, 시간대 설정 후 총 3개 다운로드 (대한항공, 아시아나, 델타)**
 
-        ### 2. 중요: 파일 형식 필수 변환 및 호환성
-        * **인천공항 도착편** 다운로드 파일은 파일을 열어 **[다른 이름으로 저장] → [Excel 통합 문서 (*.xlsx)]**로 변환 후 업로드하세요.
-        * **[업데이트!] 델타항공 CSV 파일 호환 지원:** 델타에서 온 가로형 CSV 파일도 변환 없이 '1. 승객수 파일'에 올리면 자동으로 환승객 수만 추출해 줍니다.
+        ### 2. 중요: 파일 형식 필수 변환
+        * 본 시스템은 **.xlsx 형식만 지원**합니다.
+        * **인천공항 도착편** 다운로드 파일은 그대로 올리면 읽히지 않습니다.
+        * **방법:** 파일을 열어 **[다른 이름으로 저장]** → 파일 형식을 **[Excel 통합 문서 (*.xlsx)]**로 선택하여 저장 후 업로드하세요.
+
+        ### 3. 기타 안내사항
+        * **델타 이메일 :** 승객수가 사진으로 왔을 때에는 이메일로 받은 대한항공 잡지 밑에 직접 입력해주세요.
         """)
 else:
     p_all, g_all = [], []
     for f in pax_files:
         df = smart_read(f)
         if df is not None:
-            # 1. 델타항공 양식인지 먼저 확인
+            # 1. 델타항공 양식인지 먼저 확인 (기능 유지)
             dl_df = parse_dl_pax(df)
             if dl_df is not None:
                 p_all.append(dl_df)
