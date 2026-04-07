@@ -9,35 +9,35 @@ st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 st.markdown("""
     <style>
     /* 웹 화면 및 캡처 시 상단 및 요소 간 기본 공백 극한으로 제거 */
-    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -10px !important; }
+    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
     div[data-testid="stVerticalBlock"] { gap: 0px !important; }
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: sans-serif; }
+    .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
-    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 3px; margin-top: 5px; }
-    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 5px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
+    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
     .carrier-item { font-size: 14px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
-    .print-col { flex: 1; min-width: 0; }
+    .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
     
     @media print {
         .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe { display: none !important; }
-        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
         .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
         div[data-testid="stVerticalBlock"] { gap: 0 !important; }
         body { zoom: 75%; }
         .print-row { display: flex !important; flex-direction: row !important; }
-        table { page-break-inside: auto; }
+        table { page-break-inside: auto; margin-bottom: 0px !important; }
         tr { page-break-inside: avoid; page-break-after: auto; }
         thead { display: table-header-group; }
-        @page { size: A4; margin-top: 12mm !important; margin-bottom: 10mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
+        @page { size: A4; margin-top: 2mm !important; margin-bottom: 2mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
         @page :first { margin-top: 0mm !important; }
     }
     </style>
@@ -306,7 +306,6 @@ else:
                 """, height=45
             )
 
-            # 공간을 많이 차지하던 st.divider()를 제거하고 얇은 선(hr)으로 교체했습니다.
             st.markdown(f"""
                 <div class="total-banner"><h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3></div>
                 <div class="carrier-banner">
