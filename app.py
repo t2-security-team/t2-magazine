@@ -18,7 +18,8 @@ st.markdown("""
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
-    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
+    /* sum-cell의 배경색은 파이썬 코드에서 동적으로 제어하도록 수정 */
+    .sum-cell { font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
@@ -37,8 +38,8 @@ st.markdown("""
         table { page-break-inside: auto; margin-bottom: 0px !important; }
         tr { page-break-inside: avoid; page-break-after: auto; }
         thead { display: table-header-group; }
-        /* 프린트 마진 수정: 상하 여백을 12mm로 늘려 짤림 방지 */
         @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
+        @page :first { margin-top: 0mm !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -130,10 +131,25 @@ def generate_table_html(df, title, count, color):
     processed_hours = set()
     
     for i, row in df.iterrows():
-        html += f'<tr><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
         curr_h = row['hour_val']
+        
+        # 16시대, 17시대, 18시대 색상 지정 (그 외는 기본 흰색)
+        row_style = ""
+        cell_style = "background-color: #ffffff !important;" 
+        if curr_h == 16:
+            row_style = ' style="background-color: #E8F4FA;"' # 연한 하늘색
+            cell_style = 'background-color: #E8F4FA !important;'
+        elif curr_h == 17:
+            row_style = ' style="background-color: #FFF9D2;"' # 연한 노란색
+            cell_style = 'background-color: #FFF9D2 !important;'
+        elif curr_h == 18:
+            row_style = ' style="background-color: #FFE5EC;"' # 연한 핑크색
+            cell_style = 'background-color: #FFE5EC !important;'
+
+        html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
+        
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell">{hour_sums[curr_h]:,}</td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="{cell_style}">{hour_sums[curr_h]:,}</td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
