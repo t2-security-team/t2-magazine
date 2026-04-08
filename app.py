@@ -14,19 +14,19 @@ st.markdown("""
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    /* 표 내용 글자 크기: 12px */
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
+    /* 표 내용 글자 크기: 13px (1px 상향) */
+    .merged-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀: 캡처 버그 방지를 위해 z-index 및 relative 속성 강제 부여 */
-    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; position: relative; z-index: 10; }
+    /* 합계 셀: 글자 크기 14px (1px 상향), 캡처 버그 방지를 위해 z-index 및 relative 속성 강제 부여 */
+    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 14px; vertical-align: middle !important; position: relative; z-index: 10; }
     
-    /* 배너 여백 최소화 */
+    /* 배너 여백 최소화 및 글자 크기 15px (1px 상향) */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
     .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
-    .carrier-item { font-size: 14px; font-weight: bold; }
+    .carrier-item { font-size: 15px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
     .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
     
@@ -121,7 +121,8 @@ def clean_route(val):
 
 def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     display_title = f"{title} ({count:,}명)"
-    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
+    # 제목 폰트 16px -> 17px 변경
+    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:17px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
     
     df = df.sort_values('시간').reset_index(drop=True)
