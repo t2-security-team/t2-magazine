@@ -121,7 +121,6 @@ def clean_route(val):
 
 def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     display_title = f"{title} ({count:,}명)"
-    # 제목 폰트 16px -> 17px 변경
     html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:17px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
     
@@ -137,7 +136,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         curr_h = row['hour_val']
         flt = str(row['편명']).upper()
         
-        # <tr> 전체가 아닌 각 <td>에 스타일을 주어 캡처 시 덮어쓰기 버그 원천 차단
         td_style = ""
         sum_bg = "#ffffff" 
         
@@ -160,7 +158,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
 
         html += f'<tr><td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
-        # 합계 칸 렌더링 (숫자 주변 span에 다시 z-index를 주어 무조건 글씨가 위로 오게 처리)
         if curr_h not in processed_hours:
             html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: {sum_bg};"><span style="position: relative; z-index: 20;">{hour_sums[curr_h]:,}</span></td>'
             processed_hours.add(curr_h)
@@ -241,6 +238,11 @@ else:
     if p_all and g_all:
         df_p = pd.concat(p_all).drop_duplicates('편명')
         df_g = pd.concat(g_all).drop_duplicates('편명')
+        
+        # 💡 [추가된 부분] 편명이 비어있는 유령 데이터 필터링
+        df_p = df_p[df_p['편명'] != ""]
+        df_g = df_g[df_g['편명'] != ""]
+        
         final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
         
         if not final.empty:
@@ -291,7 +293,7 @@ else:
                             doCap(win, doc, btn);
                         }
                     } catch(e) {
-                        alert("⚠️ 브라우저 보안 설정으로 인해 캡처가 차단되었습니다.");
+                        alert("⚠️ 브라우저 보안 설정(CORS/iframe)으로 인해 캡처가 차단되었습니다.");
                         btn.innerText = "📸 전체 사진으로 저장";
                     }
                 }
