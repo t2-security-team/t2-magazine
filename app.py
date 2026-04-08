@@ -5,44 +5,80 @@ import re
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 
-# --- [디자인 및 PDF 압축 CSS] ---
-st.markdown("""
+# --- [사이드바 설정 (글씨 크기 값을 먼저 받기 위해 위로 배치)] ---
+with st.sidebar:
+    st.header("📂 데이터 업로드")
+    pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
+    gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
+    
+    st.divider()
+    st.markdown("### 🔠 글씨 크기 조절")
+    # 글씨 크기 조절 슬라이더 (기본 0, -3부터 +7까지 조절 가능)
+    font_offset = st.slider("출력용 글씨 크기 (기본: 0)", min_value=-3, max_value=7, value=0, step=1, help="오른쪽으로 옮길수록 표와 글씨가 커집니다.")
+    
+    st.divider()
+    st.markdown("### 🎨 시각화 옵션")
+    view_option = st.radio(
+        "원하시는 표시 방식을 선택하세요:",
+        ("⬜ 기본 (색상 없음)", "✈️ 1. 항공사별 색상 표시 (DL:연노랑, OZ:연분홍)", "⏰ 2. 첨두시간 색상 표시 (16~18시)"),
+        index=0 
+    )
+    
+    opt_airline = "1. 항공사별" in view_option
+    opt_peak = "2. 첨두시간" in view_option
+    
+    st.divider()
+    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
+
+# --- [글씨 크기 동적 계산] ---
+tbl_fs = 13 + font_offset  # 기본 표 글씨
+sum_fs = 14 + font_offset  # 합계 셀 글씨
+car_fs = 15 + font_offset  # 항공사 배너 글씨
+tit_fs = 17 + font_offset  # 동/서편 제목 글씨
+
+# --- [디자인 및 PDF 압축 CSS (파이썬 f-string 연동)] ---
+# 중괄호 변수를 넣기 위해 f""" """ 형식으로 변경하고 기존 중괄호는 {{ }} 두 번 겹침 처리
+st.markdown(f"""
     <style>
     /* 웹 화면 및 캡처 시 상단 및 요소 간 기본 공백 극한으로 제거 */
-    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
-    div[data-testid="stVerticalBlock"] { gap: 0px !important; }
-    .element-container { margin-bottom: 0px !important; }
-    iframe { margin-bottom: 0px !important; min-height: 45px !important; }
+    .main .block-container {{ padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }}
+    div[data-testid="stVerticalBlock"] {{ gap: 0px !important; }}
+    .element-container {{ margin-bottom: 0px !important; }}
+    iframe {{ margin-bottom: 0px !important; min-height: 45px !important; }}
     
-    /* 표 내용 글자 크기: 13px (1px 상향) */
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
-    .merged-table tr { border: none !important; } 
-    .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
-    .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
+    /* 표 내용 글자 크기 (슬라이더 연동) */
+    .merged-table {{ width: 100%; border-collapse: collapse; font-size: {tbl_fs}px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }}
+    .merged-table tr {{ border: none !important; }} 
+    .merged-table th {{ background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }}
+    .merged-table td {{ border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }}
     
-    /* 합계 셀: 글자 크기 14px (1px 상향), 캡처 버그 방지를 위해 z-index 및 relative 속성 강제 부여 */
-    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 14px; vertical-align: middle !important; position: relative; z-index: 10; }
+    /* 합계 셀 (슬라이더 연동) */
+    .sum-cell {{ background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: {sum_fs}px; vertical-align: middle !important; position: relative; z-index: 10; }}
     
-    /* 배너 여백 최소화 및 글자 크기 15px (1px 상향) */
-    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
-    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
-    .carrier-item { font-size: 15px; font-weight: bold; }
-    .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
-    .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
+    /* 배너 여백 최소화 및 글자 크기 (슬라이더 연동) */
+    .total-banner {{ background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }}
+    .carrier-banner {{ background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }}
+    .carrier-item {{ font-size: {car_fs}px; font-weight: bold; }}
     
-    @media print {
-        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe { display: none !important; }
-        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
-        .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
-        div[data-testid="stVerticalBlock"] { gap: 0 !important; }
-        body { zoom: 75%; }
-        .print-row { display: flex !important; flex-direction: row !important; }
-        table { page-break-inside: auto; margin-bottom: 0px !important; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        thead { display: table-header-group; }
-        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
-        @page :first { margin-top: 0mm !important; }
-    }
+    /* 동편/서편 제목 글씨 크기 (슬라이더 연동) */
+    .table-title {{ text-align: center; font-size: {tit_fs}px; margin-top: 2px; margin-bottom: 5px; }}
+    
+    .print-row {{ display: flex; flex-direction: row; gap: 15px; width: 100%; }}
+    .print-col {{ flex: 1; min-width: 0; margin-bottom: 0px !important; }}
+    
+    @media print {{
+        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe {{ display: none !important; }}
+        html, body {{ height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }}
+        .appview-container, .main, .block-container, .element-container {{ padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }}
+        div[data-testid="stVerticalBlock"] {{ gap: 0 !important; }}
+        body {{ zoom: 75%; }}
+        .print-row {{ display: flex !important; flex-direction: row !important; }}
+        table {{ page-break-inside: auto; margin-bottom: 0px !important; }}
+        tr {{ page-break-inside: avoid; page-break-after: auto; }}
+        thead {{ display: table-header-group; }}
+        @page {{ size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }}
+        @page :first {{ margin-top: 0mm !important; }}
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -121,7 +157,8 @@ def clean_route(val):
 
 def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     display_title = f"{title} ({count:,}명)"
-    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:17px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
+    # [수정] 폰트 사이즈를 CSS 클래스(table-title)로 제어하도록 변경
+    html = f"<div class='print-col'><h3 class='table-title' style='color:{color};'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
     
     df = df.sort_values('시간').reset_index(drop=True)
@@ -163,26 +200,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
-
-# --- [사이드바 설정] ---
-with st.sidebar:
-    st.header("📂 데이터 업로드")
-    pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
-    gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
-    
-    st.divider()
-    st.markdown("### 🎨 시각화 옵션")
-    view_option = st.radio(
-        "원하시는 표시 방식을 선택하세요:",
-        ("⬜ 기본 (색상 없음)", "✈️ 1. 항공사별 색상 표시 (DL:연노랑, OZ:연분홍)", "⏰ 2. 첨두시간 색상 표시 (16~18시)"),
-        index=0 
-    )
-    
-    opt_airline = "1. 항공사별" in view_option
-    opt_peak = "2. 첨두시간" in view_option
-    
-    st.divider()
-    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
 
 # --- [메인 로직] ---
 if not (pax_files and gate_files):
@@ -239,7 +256,6 @@ else:
         df_p = pd.concat(p_all).drop_duplicates('편명')
         df_g = pd.concat(g_all).drop_duplicates('편명')
         
-        # 💡 [추가된 부분] 편명이 비어있는 유령 데이터 필터링
         df_p = df_p[df_p['편명'] != ""]
         df_g = df_g[df_g['편명'] != ""]
         
