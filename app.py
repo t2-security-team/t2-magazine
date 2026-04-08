@@ -20,8 +20,8 @@ st.markdown("""
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀 기본 배경색은 무조건 하얀색으로 강제하여 <tr> 색상이 번지는 것을 완벽 차단 */
-    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
+    /* 합계 셀: 캡처 버그 방지를 위해 z-index 및 relative 속성 강제 부여 */
+    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; position: relative; z-index: 10; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
@@ -127,7 +127,7 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     df = df.sort_values('시간').reset_index(drop=True)
     html += '<table class="merged-table"><thead><tr><th style="width:14%;">예상시간</th><th style="width:12%;">시간</th><th>출발지</th><th style="width:14%;">편명</th><th style="width:11%;">게이트</th><th style="width:11%;">승객</th><th style="width:11%;">합계</th></tr></thead><tbody>'
     
-    df['hour_val'] = df['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
+    df['hour_val'] = df['시간'].astype(str).str.extract(r'(\d+)', expand=False).fillna(0).astype(int)
     hour_counts = df['hour_val'].value_counts().sort_index()
     hour_sums = df.groupby('hour_val')['p_val'].sum()
     processed_hours = set()
@@ -136,33 +136,32 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         curr_h = row['hour_val']
         flt = str(row['편명']).upper()
         
-        row_style = ""
-        sum_bg = "#ffffff" # 합계 칸은 무조건 하얀색으로 초기화
+        # <tr> 전체가 아닌 각 <td>에 스타일을 주어 캡처 시 덮어쓰기 버그 원천 차단
+        td_style = ""
+        sum_bg = "#ffffff" 
         
-        # 1. 첨두시간 표시 (체크 시 행과 합계 모두 지정 색상 적용)
         if opt_peak:
             if curr_h == 16:
-                row_style = ' style="background-color: #F4FAFD;"' 
+                td_style = ' style="background-color: #F4FAFD;"' 
                 sum_bg = "#F4FAFD"
             elif curr_h == 17:
-                row_style = ' style="background-color: #FFFDF0;"' 
+                td_style = ' style="background-color: #FFFDF0;"' 
                 sum_bg = "#FFFDF0"
             elif curr_h == 18:
-                row_style = ' style="background-color: #FFF5F8;"' 
+                td_style = ' style="background-color: #FFF5F8;"' 
                 sum_bg = "#FFF5F8"
 
-        # 2. 항공사별 색상 표시 (체크 시 행 색상만 덮어쓰고, 합계 색상에는 절대 영향 주지 않음)
         if opt_airline:
             if flt.startswith("DL"):
-                row_style = ' style="background-color: #FFFDE7;"' # 연노랑
+                td_style = ' style="background-color: #FFFDE7;"' 
             elif flt.startswith("OZ"):
-                row_style = ' style="background-color: #FDF4F7;"' # 아주 연한 분홍색
+                td_style = ' style="background-color: #FDF4F7;"' 
 
-        html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
+        html += f'<tr><td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
-        # 합계 칸 렌더링 (!important를 주어 항공사 row 색상이 스며드는 것을 원천 차단)
+        # 합계 칸 렌더링 (숫자 주변 span에 다시 z-index를 주어 무조건 글씨가 위로 오게 처리)
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: {sum_bg} !important;">{hour_sums[curr_h]:,}</td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: {sum_bg};"><span style="position: relative; z-index: 20;">{hour_sums[curr_h]:,}</span></td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
@@ -175,14 +174,12 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### 🎨 시각화 옵션")
-    # 라디오 버튼을 사용하여 무조건 1개만 선택되도록 설정 (중복 불가)
     view_option = st.radio(
         "원하시는 표시 방식을 선택하세요:",
         ("⬜ 기본 (색상 없음)", "✈️ 1. 항공사별 색상 표시 (DL:연노랑, OZ:연분홍)", "⏰ 2. 첨두시간 색상 표시 (16~18시)"),
-        index=0 # 기본값은 색상 없음
+        index=0 
     )
     
-    # 선택된 옵션에 따라 boolean 값 설정
     opt_airline = "1. 항공사별" in view_option
     opt_peak = "2. 첨두시간" in view_option
     
@@ -247,7 +244,7 @@ else:
         
         if not final.empty:
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
-            final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
+            final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)', expand=False).fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
             final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
             final['구역'] = final['g_num'].apply(lambda x: '서편' if 0 < x <= 250 else '동편')
