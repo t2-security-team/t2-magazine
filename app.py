@@ -20,8 +20,8 @@ st.markdown("""
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀 글자 크기: 13px, 합계 칸은 인쇄를 위해 무조건 흰색 고정! */
-    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
+    /* 합계 셀 기본 배경색은 무조건 하얀색으로 강제하여 <tr> 색상이 번지는 것을 완벽 차단 */
+    .sum-cell { background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
@@ -137,28 +137,32 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         flt = str(row['편명']).upper()
         
         row_style = ""
+        sum_bg = "#ffffff" # 합계 칸은 무조건 하얀색으로 초기화
         
-        # 1. 항공사별 색상 표시가 체크된 경우 우선 적용 (인쇄를 위해 아주 연하게 변경)
+        # 1. 첨두시간 표시 (체크 시 행과 합계 모두 지정 색상 적용)
+        if opt_peak:
+            if curr_h == 16:
+                row_style = ' style="background-color: #F4FAFD;"' 
+                sum_bg = "#F4FAFD"
+            elif curr_h == 17:
+                row_style = ' style="background-color: #FFFDF0;"' 
+                sum_bg = "#FFFDF0"
+            elif curr_h == 18:
+                row_style = ' style="background-color: #FFF5F8;"' 
+                sum_bg = "#FFF5F8"
+
+        # 2. 항공사별 색상 표시 (체크 시 행 색상만 덮어쓰고, 합계 색상에는 절대 영향 주지 않음)
         if opt_airline:
             if flt.startswith("DL"):
-                row_style = ' style="background-color: #F8F4FF;"' # 아주 연한 보라색
+                row_style = ' style="background-color: #FFFDE7;"' # 연노랑
             elif flt.startswith("OZ"):
                 row_style = ' style="background-color: #FDF4F7;"' # 아주 연한 분홍색
-            
-        # 2. 첨두시간 표시가 체크된 경우 (단, 항공사 보기가 우선이 아닐 때, 인쇄용 연한 톤 적용)
-        elif opt_peak:
-            if curr_h == 16:
-                row_style = ' style="background-color: #F4FAFD;"' # 아주 연한 하늘색
-            elif curr_h == 17:
-                row_style = ' style="background-color: #FFFDF0;"' # 아주 연한 노란색
-            elif curr_h == 18:
-                row_style = ' style="background-color: #FFF5F8;"' # 아주 연한 핑크색
 
         html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
         
-        # 합계 칸은 CSS에서 무조건 배경색을 흰색으로 고정함 (row_style의 영향을 받지 않음)
+        # 합계 칸 렌더링 (!important를 주어 항공사 row 색상이 스며드는 것을 원천 차단)
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell">{hour_sums[curr_h]:,}</td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: {sum_bg} !important;">{hour_sums[curr_h]:,}</td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
@@ -170,9 +174,17 @@ with st.sidebar:
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
-    st.markdown("### 🎨 시각화 옵션 (체크박스)")
-    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연보라, OZ:연분홍)")
-    opt_peak = st.checkbox("2. ⏰ 첨두시간 색상 표시 (16~18시)")
+    st.markdown("### 🎨 시각화 옵션")
+    # 라디오 버튼을 사용하여 무조건 1개만 선택되도록 설정 (중복 불가)
+    view_option = st.radio(
+        "원하시는 표시 방식을 선택하세요:",
+        ("⬜ 기본 (색상 없음)", "✈️ 1. 항공사별 색상 표시 (DL:연노랑, OZ:연분홍)", "⏰ 2. 첨두시간 색상 표시 (16~18시)"),
+        index=0 # 기본값은 색상 없음
+    )
+    
+    # 선택된 옵션에 따라 boolean 값 설정
+    opt_airline = "1. 항공사별" in view_option
+    opt_peak = "2. 첨두시간" in view_option
     
     st.divider()
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
