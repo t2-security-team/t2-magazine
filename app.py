@@ -14,12 +14,14 @@ st.markdown("""
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
+    /* 표 내용 글자 크기 1px(포인트) 증가: 11px -> 12px */
+    .merged-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
-    /* sum-cell의 배경색은 파이썬 코드에서 동적으로 제어하도록 수정 */
-    .sum-cell { font-weight: bold; color: #1E3A8A; font-size: 12px; vertical-align: middle !important; }
+    
+    /* 합계 셀 글자 크기 1px(포인트) 증가: 12px -> 13px */
+    .sum-cell { font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
