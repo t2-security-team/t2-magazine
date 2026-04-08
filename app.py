@@ -48,7 +48,11 @@ def clean_flight_no(val):
     if pd.isna(val): return ""
     val = str(val).strip().replace(" ", "").upper()
     match = re.match(r'([A-Z]+)(\d+)', val)
-    if match: return f"{match.group(1)}{int(match.group(2))}"
+    if match: 
+        airline = match.group(1)
+        num = int(match.group(2))
+        # 숫자를 최소 3자리로 맞춤 (예: 6 -> 006, 12 -> 012, 1234 -> 1234)
+        return f"{airline}{num:03d}"
     return val
 
 def smart_read(file):
