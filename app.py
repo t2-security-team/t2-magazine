@@ -37,8 +37,8 @@ st.markdown("""
         table { page-break-inside: auto; margin-bottom: 0px !important; }
         tr { page-break-inside: avoid; page-break-after: auto; }
         thead { display: table-header-group; }
-        @page { size: A4; margin-top: 2mm !important; margin-bottom: 2mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
-        @page :first { margin-top: 0mm !important; }
+        /* 프린트 마진 수정: 상하 여백을 12mm로 늘려 짤림 방지 */
+        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -51,7 +51,6 @@ def clean_flight_no(val):
     if match: 
         airline = match.group(1)
         num = int(match.group(2))
-        # 숫자를 최소 3자리로 맞춤 (예: 6 -> 006, 12 -> 012, 1234 -> 1234)
         return f"{airline}{num:03d}"
     return val
 
