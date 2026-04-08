@@ -14,14 +14,14 @@ st.markdown("""
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    /* 표 내용 글자 크기 1px(포인트) 증가: 11px -> 12px */
+    /* 표 내용 글자 크기: 12px */
     .merged-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀 글자 크기 1px(포인트) 증가: 12px -> 13px */
-    .sum-cell { font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
+    /* 합계 셀 글자 크기: 13px, 합계 칸은 인쇄를 위해 무조건 흰색 고정! */
+    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
@@ -119,7 +119,7 @@ def clean_route(val):
     if '/' in val: return val.split('/')[0].strip()
     return val
 
-def generate_table_html(df, title, count, color):
+def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     display_title = f"{title} ({count:,}명)"
     html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
@@ -134,24 +134,31 @@ def generate_table_html(df, title, count, color):
     
     for i, row in df.iterrows():
         curr_h = row['hour_val']
+        flt = str(row['편명']).upper()
         
-        # 16시대, 17시대, 18시대 색상 지정 (그 외는 기본 흰색)
         row_style = ""
-        cell_style = "background-color: #ffffff !important;" 
-        if curr_h == 16:
-            row_style = ' style="background-color: #E8F4FA;"' # 연한 하늘색
-            cell_style = 'background-color: #E8F4FA !important;'
-        elif curr_h == 17:
-            row_style = ' style="background-color: #FFF9D2;"' # 연한 노란색
-            cell_style = 'background-color: #FFF9D2 !important;'
-        elif curr_h == 18:
-            row_style = ' style="background-color: #FFE5EC;"' # 연한 핑크색
-            cell_style = 'background-color: #FFE5EC !important;'
+        
+        # 1. 항공사별 색상 표시가 체크된 경우 우선 적용 (인쇄를 위해 아주 연하게 변경)
+        if opt_airline:
+            if flt.startswith("DL"):
+                row_style = ' style="background-color: #F8F4FF;"' # 아주 연한 보라색
+            elif flt.startswith("OZ"):
+                row_style = ' style="background-color: #FDF4F7;"' # 아주 연한 분홍색
+            
+        # 2. 첨두시간 표시가 체크된 경우 (단, 항공사 보기가 우선이 아닐 때, 인쇄용 연한 톤 적용)
+        elif opt_peak:
+            if curr_h == 16:
+                row_style = ' style="background-color: #F4FAFD;"' # 아주 연한 하늘색
+            elif curr_h == 17:
+                row_style = ' style="background-color: #FFFDF0;"' # 아주 연한 노란색
+            elif curr_h == 18:
+                row_style = ' style="background-color: #FFF5F8;"' # 아주 연한 핑크색
 
         html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
         
+        # 합계 칸은 CSS에서 무조건 배경색을 흰색으로 고정함 (row_style의 영향을 받지 않음)
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="{cell_style}">{hour_sums[curr_h]:,}</td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell">{hour_sums[curr_h]:,}</td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
@@ -161,6 +168,12 @@ with st.sidebar:
     st.header("📂 데이터 업로드")
     pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
+    
+    st.divider()
+    st.markdown("### 🎨 시각화 옵션 (체크박스)")
+    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연보라, OZ:연분홍)")
+    opt_peak = st.checkbox("2. ⏰ 첨두시간 색상 표시 (16~18시)")
+    
     st.divider()
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
 
@@ -339,7 +352,8 @@ else:
             
             west_p = final[final['구역'] == '서편']['p_val'].sum()
             east_p = final[final['구역'] == '동편']['p_val'].sum()
-            w_html = generate_table_html(final[final['구역'] == '서편'], "⬅️ 서편", west_p, "#DC2626")
-            e_html = generate_table_html(final[final['구역'] == '동편'], "➡️ 동편", east_p, "#2563EB")
+            
+            w_html = generate_table_html(final[final['구역'] == '서편'], "⬅️ 서편", west_p, "#DC2626", opt_airline, opt_peak)
+            e_html = generate_table_html(final[final['구역'] == '동편'], "➡️ 동편", east_p, "#2563EB", opt_airline, opt_peak)
             
             st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
