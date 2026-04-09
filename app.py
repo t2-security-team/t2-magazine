@@ -5,7 +5,7 @@ import re
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 
-# --- [디자인 및 PDF 압축 CSS] ---
+# --- [디자인 및 PDF 압축 CSS (기본 고정 스타일)] ---
 st.markdown("""
     <style>
     /* 웹 화면 및 캡처 시 상단 및 요소 간 기본 공백 극한으로 제거 */
@@ -14,14 +14,14 @@ st.markdown("""
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    /* 표 내용 글자 크기: 12px */
-    .merged-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
+    /* 표 기본 스타일 (글자 크기는 아래 동적 CSS에서 덮어씌움) */
+    .merged-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀: 어떤 상황에서도 무조건 흰색 배경 고정! */
-    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
+    /* 합계 셀 기본 스타일 */
+    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
     .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
@@ -138,28 +138,26 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         
         row_style_css = ""
         
-        # 1. 색상 옵션을 tr(줄)이 아닌 개별 td(칸)에 적용하기 위해 CSS 문자열만 생성
+        # 색상 옵션
         if opt_airline:
             if flt.startswith("DL"):
-                row_style_css = "background-color: #F8F4FF;" # 아주 연한 보라색
+                row_style_css = "background-color: #F8F4FF;"
             elif flt.startswith("OZ"):
-                row_style_css = "background-color: #FDF4F7;" # 아주 연한 분홍색
+                row_style_css = "background-color: #FDF4F7;"
             
         elif opt_peak:
             if curr_h == 16:
-                row_style_css = "background-color: #F4FAFD;" # 아주 연한 하늘색
+                row_style_css = "background-color: #F4FAFD;"
             elif curr_h == 17:
-                row_style_css = "background-color: #FFFDF0;" # 아주 연한 노란색
+                row_style_css = "background-color: #FFFDF0;"
             elif curr_h == 18:
-                row_style_css = "background-color: #FFF5F8;" # 아주 연한 핑크색
+                row_style_css = "background-color: #FFF5F8;"
 
         td_style = f' style="{row_style_css}"' if row_style_css else ""
 
-        # 줄(tr)에는 색을 넣지 않고, 앞의 6개 칸(td)에만 배경색을 지정함
         html += f'<tr>'
         html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
-        # 합계 칸(7번째)은 위의 td_style을 받지 않으므로 무조건 흰색을 유지함!
         if curr_h not in processed_hours:
             html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell"><div style="position: relative; z-index: 10;">{hour_sums[curr_h]:,}</div></td>'
             processed_hours.add(curr_h)
@@ -179,6 +177,28 @@ with st.sidebar:
     
     st.divider()
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
+    
+    # ⭐ 추가된 부분: 글자 크기 조절 슬라이더
+    st.divider()
+    st.markdown("### 🔠 글자 크기 조절")
+    # 기본값 12px, 최소 8px, 최대 24px
+    base_font_size = st.slider("표 글자 크기 (px)", min_value=8, max_value=24, value=12, step=1)
+
+# ⭐ 추가된 부분: 슬라이더 값에 따라 동적으로 CSS를 생성하여 덮어씌움
+# 파이썬 f-string 안에서 CSS의 중괄호 {}를 표현하려면 {{ }} 로 두 번 써야 합니다.
+st.markdown(f"""
+    <style>
+    /* 표 내부 글자 크기를 슬라이더 값에 맞춤 */
+    .merged-table, .merged-table th, .merged-table td {{
+        font-size: {base_font_size}px !important;
+    }}
+    /* 합계 셀은 기본 글자보다 1px 더 크게 설정 */
+    .sum-cell {{
+        font-size: {base_font_size + 1}px !important;
+    }}
+    </style>
+""", unsafe_allow_html=True)
+
 
 # --- [메인 로직] ---
 if not (pax_files and gate_files):
