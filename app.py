@@ -6,7 +6,6 @@ import re
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 
 # --- [💡 핵심: 튕김 현상 완벽 해결을 위한 저장소] ---
-# 칸을 넉넉히 10개로 고정하여 지저분한 왼쪽 선택칸을 없앰
 if 'saved_manual_df' not in st.session_state:
     st.session_state.saved_manual_df = pd.DataFrame([{"편명": "", "승객수": ""} for _ in range(10)])
 
@@ -90,7 +89,8 @@ st.markdown(f"""
 def clean_flight_no(val):
     if pd.isna(val): return ""
     val = str(val).strip().replace(" ", "").upper()
-    match = re.match(r'([A-Z]+)(\d+)', val)
+    # 💡 수정포인트: 7C(제주항공) 등 알파벳+숫자 조합의 항공사 코드도 매칭되도록 변경
+    match = re.match(r'([A-Z0-9]{2,3})(\d+)', val)
     if match: 
         airline = match.group(1)
         num = int(match.group(2))
@@ -181,12 +181,9 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
 
 # --- [메인 로직] ---
 
-# 1. 독립된 창 (수기 입력 UI) - 입력 완료 후 저장 버튼 방식!
 if use_manual_input:
     st.markdown("<div class='no-print manual-box' style='background-color: #FFFDE7; padding: 20px; border-radius: 12px; border: 2px solid #FBC02D; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
     st.markdown("<h3 style='margin-top:0; color: #1E3A8A;'>✍️ 델타항공 독립 수기 입력창</h3>", unsafe_allow_html=True)
-    
-    # 💡 요청하신 4번, 5번 안내 문구 추가
     st.markdown("""
         <div style='font-size:16px; margin-bottom:10px; line-height: 1.6;'>
         1️⃣ 사진을 보고 아래 표에 편명과 숫자를 모두 입력하세요.<br>
@@ -197,21 +194,14 @@ if use_manual_input:
         </div>
     """, unsafe_allow_html=True)
     
-    # num_rows="dynamic"을 제거하여 불필요한 왼쪽 선택칸 삭제 (대신 위에서 10칸 넉넉히 제공)
     temp_df = st.data_editor(st.session_state.saved_manual_df, key="manual_editor", use_container_width=True, hide_index=True)
-    
-    # 저장 버튼을 눌러야만 실제 데이터에 반영됨 (튕김 원천 차단)
     if st.button("💾 데이터 저장 (입력 완료 후 클릭!)", use_container_width=True):
         st.session_state.saved_manual_df = temp_df
         st.success("✅ 저장이 완료되었습니다! 이제 좌측의 체크박스를 한 번 더 눌러 창을 닫아주세요.")
-    
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-# 데이터 유효성 검사
 valid_manual_check = st.session_state.saved_manual_df[st.session_state.saved_manual_df["편명"].astype(str).str.strip() != ""]
 
-# 아무 데이터도 없을 때 초기 안내 화면 문구 원복
 if not (pax_files and gate_files) and valid_manual_check.empty and not use_manual_input:
     st.markdown("<h2 style='text-align: center;'>✈️ T2 보안검색 환승부 잡지 ✈️</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
@@ -229,7 +219,6 @@ if not (pax_files and gate_files) and valid_manual_check.empty and not use_manua
 else:
     p_all, g_all = [], []
     
-    # 1. 저장된 수기 데이터 합치기
     if not valid_manual_check.empty:
         valid_manual_copy = valid_manual_check.copy()
         valid_manual_copy['편명'] = valid_manual_copy['편명'].astype(str).apply(clean_flight_no)
@@ -246,10 +235,18 @@ else:
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
                 p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+                t_c_p = find_col(df, ['TIME', 'STA', '시간', 'ETA']) # 💡 수정포인트: 승객수 파일에서도 시간을 찾아서 보존함
+                
                 if f_c and p_c:
-                    tmp = df[[f_c, p_c]].copy()
-                    if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
-                    tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
+                    cols = [f_c, p_c]
+                    new_cols = ['편명', '승객수']
+                    if r_c: 
+                        cols.append(r_c); new_cols.append('출발지')
+                    if t_c_p: 
+                        cols.append(t_c_p); new_cols.append('시간_p')
+                    
+                    tmp = df[cols].copy()
+                    tmp.columns = new_cols
                     tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                     if not tmp.empty:
                         p_all.append(tmp)
@@ -264,34 +261,63 @@ else:
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
             if f_c and g_c and t_c:
                 tmp = df[[f_c, g_c, t_c]].copy()
-                if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
-                tmp.columns = ['편명', '게이트', '시간', '출발지'] if r_c else ['편명', '게이트', '시간']
+                if r_c: 
+                    tmp['출발지'] = df[r_c].apply(clean_route)
+                    tmp.columns = ['편명', '게이트', '시간_g', '출발지']
+                else: 
+                    tmp.columns = ['편명', '게이트', '시간_g']
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                 if not tmp.empty:
                     g_all.append(tmp)
 
     # 4. 데이터 병합 및 시각화
-    if p_all and g_all:
+    if p_all:
         df_p = pd.concat(p_all).drop_duplicates('편명', keep='last')
-        df_g = pd.concat(g_all).drop_duplicates('편명')
-        
         df_p = df_p[df_p['편명'] != ""]
-        df_g = df_g[df_g['편명'] != ""]
         
-        if df_p.empty or df_g.empty:
-            st.error("오류: 업로드된 파일이나 입력된 데이터에서 유효한 편명 또는 승객 정보를 찾을 수 없습니다.")
-            st.stop()
+        df_g = pd.DataFrame(columns=['편명']) # 게이트가 없어도 작동하도록 빈 프레임 할당
+        if g_all:
+            df_g = pd.concat(g_all).drop_duplicates('편명')
+            df_g = df_g[df_g['편명'] != ""]
             
-        final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
+        # 💡 수정포인트: INNER JOIN -> RIGHT JOIN (게이트 정보가 매칭 안돼도 승객 데이터는 100% 보존)
+        final = pd.merge(df_g, df_p, on='편명', how='right')
         
         if not final.empty:
-            # 빈 문자열("")도 여기서 알아서 0으로 변환 처리되므로 에러 없음!
+            # 💡 수정포인트: 승객수에 콤마(,)가 포함되어 숫자가 0으로 날아가는 현상 원천 차단
+            final['승객수'] = final['승객수'].astype(str).str.replace(',', '', regex=False).str.replace('명', '', regex=False)
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
+            
+            # 승객수가 0명(빈칸, 결측치 등)인 데이터는 제외
+            final = final[final['p_val'] > 0]
+            
+            # --- [시간 및 데이터 결측치 복원 로직] ---
+            if '시간_g' in final.columns and '시간_p' in final.columns:
+                final['시간'] = final['시간_g'].fillna(final['시간_p'])
+            elif '시간_g' in final.columns:
+                final['시간'] = final['시간_g']
+            elif '시간_p' in final.columns:
+                final['시간'] = final['시간_p']
+            else:
+                final['시간'] = '00:00'
+            final['시간'] = final['시간'].fillna('00:00')
+            
+            # 출발지 통합 처리
+            cols_check = [c for c in final.columns if '출발지' in c]
+            if len(cols_check) > 1: final['출발지'] = final[cols_check[0]].fillna(final[cols_check[1]])
+            elif len(cols_check) == 1: final['출발지'] = final[cols_check[0]]
+            else: final['출발지'] = ''
+            final['출발지'] = final['출발지'].fillna('')
+
+            if '게이트' not in final.columns:
+                final['게이트'] = '미정'
+            final['게이트'] = final['게이트'].fillna('미정').astype(str).str.strip()
+            
             final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)', expand=False).fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
             
-            final['게이트'] = final['게이트'].astype(str).str.strip()
-            final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
+            # 💡 수정포인트: '250A' 같은 문자열 게이트도 숫자만 똑똑하게 분리해서 에러 방지
+            final['g_num'] = pd.to_numeric(final['게이트'].str.extract(r'(\d+)', expand=False), errors='coerce').fillna(0)
             final['구역'] = final['g_num'].apply(lambda x: '서편' if 0 < x <= 250 else '동편')
             
             total_p = final['p_val'].sum()
