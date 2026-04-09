@@ -111,7 +111,7 @@ def find_col(df, keywords):
             if key.upper() in clean_col: return col
     return None
 
-# ⭐️ 출발지 포맷팅 함수 (라디오버튼 선택값에 따라 변환)
+# ⭐️ 출발지 포맷팅 함수 (선택값에 따라 변환)
 def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
@@ -138,7 +138,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
     
     df = df.sort_values('시간').reset_index(drop=True)
     
-    # ⭐️ 캡처 도구가 인식할 수 있도록 th 태그에 직접 !important 삽입
     html += f'<table class="merged-table" style="font-size: {font_size}px !important;"><thead><tr>'
     html += f'<th style="width:14%; font-size:{font_size}px !important;">예상시간</th>'
     html += f'<th style="width:12%; font-size:{font_size}px !important;">시간</th>'
@@ -174,7 +173,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             elif curr_h == 18:
                 row_style_css = "background-color: #FFF5F8;" 
 
-        # ⭐️ td 태그에도 !important 강제 주입
         td_style = f' style="{row_style_css} font-size: {font_size}px !important;"'
 
         html += f'<tr>'
@@ -194,13 +192,11 @@ with st.sidebar:
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
-    st.markdown("### 🌍 출발지 표기 방식")
-    # ⭐️ 출발지 표시 형식을 선택할 수 있는 라디오 버튼 추가
+    # ⭐️ 출발지 표시 형식 라디오 버튼 추가
     route_option = st.radio(
-        "표시 형식을 선택하세요",
+        "🌍 출발지 표기 방식",
         ["한글+영어 (혼합)", "한글 (도시명)", "영어 (쓰리코드)"],
-        index=0,
-        label_visibility="collapsed"
+        index=0
     )
     
     st.divider()
@@ -212,9 +208,8 @@ with st.sidebar:
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
     
     st.divider()
-    st.markdown("### 🔠 표 글자 크기 조절")
-    # ⭐️ 최대 17px까지만 설정 가능하도록 변경
-    base_font_size = st.slider("크기 (px)", min_value=10, max_value=17, value=12, step=1, label_visibility="collapsed")
+    # ⭐️ 표 글자 크기: 10 ~ 17px 제한
+    base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
 
 # 이중 안전장치: 전역 CSS에도 폰트 사이즈 삽입
 st.markdown(f"""
@@ -257,7 +252,7 @@ else:
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
                 if f_c and p_c:
                     tmp = df[[f_c, p_c]].copy()
-                    # ⭐️ 출발지 변환 시 route_option 반영
+                    # ⭐️ 출발지 변환 시 라디오버튼 선택값(route_option) 반영
                     if r_c: tmp['출발지'] = df[r_c].apply(lambda x: format_route(x, route_option))
                     tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                     tmp['편명'] = tmp['편명'].apply(clean_flight_no)
@@ -272,7 +267,7 @@ else:
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
             if f_c and g_c and t_c:
                 tmp = df[[f_c, g_c, t_c]].copy()
-                # ⭐️ 출발지 변환 시 route_option 반영
+                # ⭐️ 출발지 변환 시 라디오버튼 선택값(route_option) 반영
                 if r_c: tmp['출발지'] = df[r_c].apply(lambda x: format_route(x, route_option))
                 tmp.columns = ['편명', '게이트', '시간', '출발지'] if r_c else ['편명', '게이트', '시간']
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
@@ -313,7 +308,7 @@ else:
                 <script>
                 function takePic() {
                     var btn = document.getElementById('pic-btn');
-                    btn.innerText = "⏳ 전체 화면 캡처 중... 잠시만요!";
+                    btn.innerText = "⏳ 캡처 중... 잠시만요!";
                     try {
                         var win = window.parent;
                         var doc = win.document;
@@ -350,12 +345,18 @@ else:
 
                     var oldTargetPaddingTop = target.style.paddingTop;
                     var oldTargetMarginTop = target.style.marginTop;
+                    
+                    // ⭐️ 사진을 찍을 때 도화지(너비)를 A4 비율과 비슷한 1100px로 강제 고정! (글자가 상대적으로 작아지는 현상 방지)
+                    var oldTargetWidth = target.style.width;
+                    var oldTargetMaxWidth = target.style.maxWidth;
 
                     if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                     if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
 
-                    target.style.paddingTop = '0px';
+                    target.style.paddingTop = '10px';
                     target.style.marginTop = '0px';
+                    target.style.width = '1100px';      // 강제 고정 너비
+                    target.style.maxWidth = '1100px';   // 강제 고정 최대 너비
 
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                     
@@ -363,10 +364,7 @@ else:
                         win.html2canvas(target, { 
                             scale: 2, 
                             useCORS: true, 
-                            backgroundColor: '#ffffff',
-                            scrollY: 0,
-                            windowWidth: target.scrollWidth,
-                            windowHeight: target.scrollHeight 
+                            backgroundColor: '#ffffff'
                         }).then(function(canvas) {
                             var link = doc.createElement('a');
                             link.download = '보안검색_잡지_전체.png';
@@ -380,6 +378,10 @@ else:
                             
                             target.style.paddingTop = oldTargetPaddingTop;
                             target.style.marginTop = oldTargetMarginTop;
+                            
+                            // ⭐️ 캡처가 끝나면 너비 다시 원래대로 원상복구
+                            target.style.width = oldTargetWidth;
+                            target.style.maxWidth = oldTargetMaxWidth;
 
                             hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
                             btn.innerText = "📸 전체 사진으로 저장";
