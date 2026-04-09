@@ -20,7 +20,7 @@ st.markdown("""
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    /* 합계 셀 글자 크기: 13px, 합계 칸은 인쇄를 위해 무조건 흰색 고정! */
+    /* 합계 셀: 어떤 상황에서도 무조건 흰색 배경 고정! */
     .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
     
     /* 배너 여백 최소화 */
@@ -136,29 +136,32 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         curr_h = row['hour_val']
         flt = str(row['편명']).upper()
         
-        row_style = ""
+        row_style_css = ""
         
-        # 1. 항공사별 색상 표시가 체크된 경우 우선 적용 (인쇄를 위해 아주 연하게 변경)
+        # 1. 색상 옵션을 tr(줄)이 아닌 개별 td(칸)에 적용하기 위해 CSS 문자열만 생성
         if opt_airline:
             if flt.startswith("DL"):
-                row_style = ' style="background-color: #F8F4FF;"' # 아주 연한 보라색
+                row_style_css = "background-color: #F8F4FF;" # 아주 연한 보라색
             elif flt.startswith("OZ"):
-                row_style = ' style="background-color: #FDF4F7;"' # 아주 연한 분홍색
+                row_style_css = "background-color: #FDF4F7;" # 아주 연한 분홍색
             
-        # 2. 첨두시간 표시가 체크된 경우 (단, 항공사 보기가 우선이 아닐 때, 인쇄용 연한 톤 적용)
         elif opt_peak:
             if curr_h == 16:
-                row_style = ' style="background-color: #F4FAFD;"' # 아주 연한 하늘색
+                row_style_css = "background-color: #F4FAFD;" # 아주 연한 하늘색
             elif curr_h == 17:
-                row_style = ' style="background-color: #FFFDF0;"' # 아주 연한 노란색
+                row_style_css = "background-color: #FFFDF0;" # 아주 연한 노란색
             elif curr_h == 18:
-                row_style = ' style="background-color: #FFF5F8;"' # 아주 연한 핑크색
+                row_style_css = "background-color: #FFF5F8;" # 아주 연한 핑크색
 
-        html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
+        td_style = f' style="{row_style_css}"' if row_style_css else ""
+
+        # 줄(tr)에는 색을 넣지 않고, 앞의 6개 칸(td)에만 배경색을 지정함
+        html += f'<tr>'
+        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
-        # 합계 칸은 CSS에서 무조건 배경색을 흰색으로 고정함 (row_style의 영향을 받지 않음)
+        # 합계 칸(7번째)은 위의 td_style을 받지 않으므로 무조건 흰색을 유지함!
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell">{hour_sums[curr_h]:,}</td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell"><div style="position: relative; z-index: 10;">{hour_sums[curr_h]:,}</div></td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
