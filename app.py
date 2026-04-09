@@ -141,17 +141,17 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak):
         # 색상 옵션
         if opt_airline:
             if flt.startswith("DL"):
-                row_style_css = "background-color: #F8F4FF;"
+                row_style_css = "background-color: #E3F2FD;" # 아주 연한 하늘색으로 변경됨
             elif flt.startswith("OZ"):
-                row_style_css = "background-color: #FDF4F7;"
+                row_style_css = "background-color: #FDF4F7;" # 아주 연한 분홍색
             
         elif opt_peak:
             if curr_h == 16:
-                row_style_css = "background-color: #F4FAFD;"
+                row_style_css = "background-color: #F4FAFD;" 
             elif curr_h == 17:
-                row_style_css = "background-color: #FFFDF0;"
+                row_style_css = "background-color: #FFFDF0;" 
             elif curr_h == 18:
-                row_style_css = "background-color: #FFF5F8;"
+                row_style_css = "background-color: #FFF5F8;" 
 
         td_style = f' style="{row_style_css}"' if row_style_css else ""
 
@@ -172,20 +172,19 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### 🎨 시각화 옵션 (체크박스)")
-    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연보라, OZ:연분홍)")
+    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
     opt_peak = st.checkbox("2. ⏰ 첨두시간 색상 표시 (16~18시)")
     
     st.divider()
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
     
-    # ⭐ 추가된 부분: 글자 크기 조절 슬라이더
+    # 🔠 글자 크기 조절 슬라이더
     st.divider()
     st.markdown("### 🔠 글자 크기 조절")
     # 기본값 12px, 최소 8px, 최대 24px
     base_font_size = st.slider("표 글자 크기 (px)", min_value=8, max_value=24, value=12, step=1)
 
-# ⭐ 추가된 부분: 슬라이더 값에 따라 동적으로 CSS를 생성하여 덮어씌움
-# 파이썬 f-string 안에서 CSS의 중괄호 {}를 표현하려면 {{ }} 로 두 번 써야 합니다.
+# 슬라이더 값에 따라 동적으로 CSS를 생성하여 덮어씌움
 st.markdown(f"""
     <style>
     /* 표 내부 글자 크기를 슬라이더 값에 맞춤 */
