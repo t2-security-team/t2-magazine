@@ -5,83 +5,44 @@ import re
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 
-# --- [💡 핵심: 튕김 현상 완벽 해결을 위한 저장소] ---
-if 'saved_manual_df' not in st.session_state:
-    st.session_state.saved_manual_df = pd.DataFrame([{"편명": "", "승객수": ""} for _ in range(10)])
-
-# --- [사이드바 설정] ---
-with st.sidebar:
-    st.header("📂 데이터 업로드")
-    pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
-    gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
-    
-    st.divider()
-    st.markdown("**※ 델타 엑셀파일은 없고 사진밖에 없을 때**")
-    use_manual_input = st.checkbox("📸 독립된 수기 입력창 열기", help="체크하면 화면에 직접 입력할 수 있는 창이 나타납니다.")
-    st.divider()
-    
-    st.markdown("### 🔠 글씨 크기 조절")
-    font_offset = st.slider("출력용 글씨 크기 (기본: 0)", min_value=-3, max_value=7, value=0, step=1)
-    
-    st.divider()
-    st.markdown("### 🎨 시각화 옵션")
-    view_option = st.radio(
-        "원하시는 표시 방식을 선택하세요:",
-        ("⬜ 기본 (색상 없음)", "✈️ 1. 항공사별 색상 표시 (DL:연노랑, OZ:연분홍)", "⏰ 2. 첨두시간 색상 표시 (16~18시)"),
-        index=0 
-    )
-    opt_airline = "1. 항공사별" in view_option
-    opt_peak = "2. 첨두시간" in view_option
-    
-    st.divider()
-    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
-
-# --- [글씨 크기 동적 계산] ---
-tbl_fs = 13 + font_offset
-sum_fs = 14 + font_offset
-car_fs = 15 + font_offset
-tit_fs = 17 + font_offset
-
 # --- [디자인 및 PDF 압축 CSS] ---
-st.markdown(f"""
+st.markdown("""
     <style>
-    .main .block-container {{ padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }}
-    div[data-testid="stVerticalBlock"] {{ gap: 0px !important; }}
-    .element-container {{ margin-bottom: 0px !important; }}
-    iframe {{ margin-bottom: 0px !important; min-height: 45px !important; }}
+    /* 웹 화면 및 캡처 시 상단 및 요소 간 기본 공백 극한으로 제거 */
+    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
+    div[data-testid="stVerticalBlock"] { gap: 0px !important; }
+    .element-container { margin-bottom: 0px !important; }
+    iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    .merged-table {{ width: 100%; border-collapse: collapse; font-size: {tbl_fs}px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }}
-    .merged-table tr {{ border: none !important; }} 
-    .merged-table th {{ background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }}
-    .merged-table td {{ border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }}
+    /* 표 내용 글자 크기: 12px */
+    .merged-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
+    .merged-table tr { border: none !important; } 
+    .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
+    .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
     
-    .sum-cell {{ background-color: #ffffff; font-weight: bold; color: #1E3A8A; font-size: {sum_fs}px; vertical-align: middle !important; position: relative; z-index: 10; }}
+    /* 합계 셀 글자 크기: 13px, 합계 칸은 인쇄를 위해 무조건 흰색 고정! */
+    .sum-cell { background-color: #ffffff !important; font-weight: bold; color: #1E3A8A; font-size: 13px; vertical-align: middle !important; }
     
-    .total-banner {{ background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }}
-    .carrier-banner {{ background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }}
-    .carrier-item {{ font-size: {car_fs}px; font-weight: bold; }}
+    /* 배너 여백 최소화 */
+    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
+    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+    .carrier-item { font-size: 14px; font-weight: bold; }
+    .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
+    .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
     
-    .table-title {{ text-align: center; font-size: {tit_fs}px; margin-top: 2px; margin-bottom: 5px; }}
-    
-    .print-row {{ display: flex; flex-direction: row; gap: 15px; width: 100%; }}
-    .print-col {{ flex: 1; min-width: 0; margin-bottom: 0px !important; }}
-    
-    @media print {{
-        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe {{ display: none !important; }}
-        [data-testid="stDataEditor"], .manual-box, button {{ display: none !important; }}
-        [data-testid="stElementContainer"]:has([data-testid="stDataEditor"]), [data-testid="stElementContainer"]:has(button) {{ display: none !important; }}
-        
-        html, body {{ height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }}
-        .appview-container, .main, .block-container, .element-container {{ padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }}
-        div[data-testid="stVerticalBlock"] {{ gap: 0 !important; }}
-        body {{ zoom: 75%; }}
-        .print-row {{ display: flex !important; flex-direction: row !important; }}
-        table {{ page-break-inside: auto; margin-bottom: 0px !important; }}
-        tr {{ page-break-inside: avoid; page-break-after: auto; }}
-        thead {{ display: table-header-group; }}
-        @page {{ size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }}
-        @page :first {{ margin-top: 0mm !important; }}
-    }}
+    @media print {
+        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe { display: none !important; }
+        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
+        .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+        div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+        body { zoom: 75%; }
+        .print-row { display: flex !important; flex-direction: row !important; }
+        table { page-break-inside: auto; margin-bottom: 0px !important; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
+        @page :first { margin-top: 0mm !important; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -89,8 +50,7 @@ st.markdown(f"""
 def clean_flight_no(val):
     if pd.isna(val): return ""
     val = str(val).strip().replace(" ", "").upper()
-    # 💡 수정포인트: 7C(제주항공) 등 알파벳+숫자 조합의 항공사 코드도 매칭되도록 변경
-    match = re.match(r'([A-Z0-9]{2,3})(\d+)', val)
+    match = re.match(r'([A-Z]+)(\d+)', val)
     if match: 
         airline = match.group(1)
         num = int(match.group(2))
@@ -110,23 +70,37 @@ def smart_read(file):
 
 def parse_dl_pax(df):
     if df is None or df.empty: return None
+    
     all_rows = [df.columns.tolist()] + df.values.tolist()
     pax_row_idx = -1
+    pax_row_data = []
+    header_row_data = []
+    
     for i, row in enumerate(all_rows):
         for cell in row:
             if str(cell).replace(" ", "").strip() == '환승객':
-                pax_row_idx = i; pax_row_data = row; break
+                pax_row_idx = i
+                pax_row_data = row
+                break
         if pax_row_idx != -1: break
+        
     if pax_row_idx != -1:
+        header_row_data = all_rows[0]
         dl_data = []
-        for col_idx, cell in enumerate(all_rows[0]):
+        for col_idx, cell in enumerate(header_row_data):
             cell_str = str(cell)
             if 'DL' in cell_str.upper() and re.search(r'DL\s*\d+', cell_str, re.IGNORECASE):
-                flt_no = clean_flight_no(re.search(r'(DL\s*\d+)', cell_str, re.IGNORECASE).group(1)) 
+                flt_no = re.search(r'(DL\s*\d+)', cell_str, re.IGNORECASE).group(1).replace(" ", "").upper()
+                flt_no = clean_flight_no(flt_no) 
+                
                 if col_idx < len(pax_row_data):
-                    try: dl_data.append({'편명': flt_no, '승객수': int(float(str(pax_row_data[col_idx]).replace(",", "").strip()))})
+                    pax_val = str(pax_row_data[col_idx]).replace(",", "").strip()
+                    try:
+                        pax_count = int(float(pax_val))
+                        dl_data.append({'편명': flt_no, '승객수': pax_count})
                     except: pass
-        if dl_data: return pd.DataFrame(dl_data)
+        if dl_data:
+            return pd.DataFrame(dl_data)
     return None
 
 def find_col(df, keywords):
@@ -147,111 +121,99 @@ def clean_route(val):
 
 def generate_table_html(df, title, count, color, opt_airline, opt_peak):
     display_title = f"{title} ({count:,}명)"
-    html = f"<div class='print-col'><h3 class='table-title' style='color:{color};'>{display_title}</h3>"
+    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
     if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
     
     df = df.sort_values('시간').reset_index(drop=True)
     html += '<table class="merged-table"><thead><tr><th style="width:14%;">예상시간</th><th style="width:12%;">시간</th><th>출발지</th><th style="width:14%;">편명</th><th style="width:11%;">게이트</th><th style="width:11%;">승객</th><th style="width:11%;">합계</th></tr></thead><tbody>'
     
-    df['hour_val'] = df['시간'].astype(str).str.extract(r'(\d+)', expand=False).fillna(0).astype(int)
+    df['hour_val'] = df['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
     hour_counts = df['hour_val'].value_counts().sort_index()
     hour_sums = df.groupby('hour_val')['p_val'].sum()
     processed_hours = set()
     
     for i, row in df.iterrows():
-        curr_h = row['hour_val']; flt = str(row['편명']).upper()
-        td_style = ""; sum_bg = "#ffffff" 
+        curr_h = row['hour_val']
+        flt = str(row['편명']).upper()
         
-        if opt_peak:
-            if curr_h == 16: td_style = ' style="background-color: #F4FAFD;"'; sum_bg = "#F4FAFD"
-            elif curr_h == 17: td_style = ' style="background-color: #FFFDF0;"'; sum_bg = "#FFFDF0"
-            elif curr_h == 18: td_style = ' style="background-color: #FFF5F8;"'; sum_bg = "#FFF5F8"
-
+        row_style = ""
+        
+        # 1. 항공사별 색상 표시가 체크된 경우 우선 적용 (인쇄를 위해 아주 연하게 변경)
         if opt_airline:
-            if flt.startswith("DL"): td_style = ' style="background-color: #FFFDE7;"' 
-            elif flt.startswith("OZ"): td_style = ' style="background-color: #FDF4F7;"' 
+            if flt.startswith("DL"):
+                row_style = ' style="background-color: #F8F4FF;"' # 아주 연한 보라색
+            elif flt.startswith("OZ"):
+                row_style = ' style="background-color: #FDF4F7;"' # 아주 연한 분홍색
+            
+        # 2. 첨두시간 표시가 체크된 경우 (단, 항공사 보기가 우선이 아닐 때, 인쇄용 연한 톤 적용)
+        elif opt_peak:
+            if curr_h == 16:
+                row_style = ' style="background-color: #F4FAFD;"' # 아주 연한 하늘색
+            elif curr_h == 17:
+                row_style = ' style="background-color: #FFFDF0;"' # 아주 연한 노란색
+            elif curr_h == 18:
+                row_style = ' style="background-color: #FFF5F8;"' # 아주 연한 핑크색
 
-        html += f'<tr><td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
+        html += f'<tr{row_style}><td></td><td>{row["시간"]}</td><td>{row["출발지"]}</td><td>{row["편명"]}</td><td>{row["게이트"]}</td><td>{row["p_val"]:,}</td>'
         
+        # 합계 칸은 CSS에서 무조건 배경색을 흰색으로 고정함 (row_style의 영향을 받지 않음)
         if curr_h not in processed_hours:
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: {sum_bg};"><span style="position: relative; z-index: 20;">{hour_sums[curr_h]:,}</span></td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell">{hour_sums[curr_h]:,}</td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
 
-# --- [메인 로직] ---
-
-if use_manual_input:
-    st.markdown("<div class='no-print manual-box' style='background-color: #FFFDE7; padding: 20px; border-radius: 12px; border: 2px solid #FBC02D; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
-    st.markdown("<h3 style='margin-top:0; color: #1E3A8A;'>✍️ 델타항공 독립 수기 입력창</h3>", unsafe_allow_html=True)
-    st.markdown("""
-        <div style='font-size:16px; margin-bottom:10px; line-height: 1.6;'>
-        1️⃣ 사진을 보고 아래 표에 편명과 숫자를 모두 입력하세요.<br>
-        2️⃣ 입력을 모두 마쳤으면 <b>아래의 [💾 데이터 저장] 버튼</b>을 꼭 눌러주세요.<br>
-        <span style='color:#DC2626; font-weight:bold;'>3️⃣ 저장이 완료되면 좌측 메뉴의 체크박스를 한 번 더 눌러서 이 창을 꼭 닫아주세요!</span><br>
-        <span style='color:#EAB308; font-weight:bold;'>4️⃣ 입력하던 내용이 반영 안되거나 자동으로 지워지면 다시 한번 입력해주세요.</span><br>
-        <span style='color:#16A34A; font-weight:bold;'>5️⃣ 수기로 입력한 델타 승객수는 꼭 사진 총 승객수랑 비교해주세요.</span>
-        </div>
-    """, unsafe_allow_html=True)
+# --- [사이드바 설정] ---
+with st.sidebar:
+    st.header("📂 데이터 업로드")
+    pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
+    gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     
-    temp_df = st.data_editor(st.session_state.saved_manual_df, key="manual_editor", use_container_width=True, hide_index=True)
-    if st.button("💾 데이터 저장 (입력 완료 후 클릭!)", use_container_width=True):
-        st.session_state.saved_manual_df = temp_df
-        st.success("✅ 저장이 완료되었습니다! 이제 좌측의 체크박스를 한 번 더 눌러 창을 닫아주세요.")
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.divider()
+    st.markdown("### 🎨 시각화 옵션 (체크박스)")
+    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연보라, OZ:연분홍)")
+    opt_peak = st.checkbox("2. ⏰ 첨두시간 색상 표시 (16~18시)")
+    
+    st.divider()
+    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
 
-valid_manual_check = st.session_state.saved_manual_df[st.session_state.saved_manual_df["편명"].astype(str).str.strip() != ""]
-
-if not (pax_files and gate_files) and valid_manual_check.empty and not use_manual_input:
+# --- [메인 로직] ---
+if not (pax_files and gate_files):
     st.markdown("<h2 style='text-align: center;'>✈️ T2 보안검색 환승부 잡지 ✈️</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
         st.markdown("""
         ### 1. 파일 업로드 방법
         * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(T/S, Pax) 데이터 업로드
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
-        * **- 인천공항 도착편 T2, 날짜, 시간대(00:00~23:59) 설정 후 검색 다운로드**
+        * **-인천공항 도착편 날짜, 시간대 설정 후 총 3개 다운로드 (대한항공, 아시아나, 델타)**
 
         ### 2. 중요: 파일 형식 필수 변환
         * 본 시스템은 **.xlsx 형식만 지원**합니다.
         * **인천공항 도착편** 다운로드 파일은 그대로 올리면 읽히지 않습니다.
         * **방법:** 파일을 열어 **[다른 이름으로 저장]** → 파일 형식을 **[Excel 통합 문서 (*.xlsx)]**로 선택하여 저장 후 업로드하세요.
+
+        ### 3. 기타 안내사항
+        * **델타 이메일 :** 승객수가 사진으로 왔을 때에는 이메일로 받은 대한항공 잡지 밑에 직접 입력해주세요.
         """)
 else:
     p_all, g_all = [], []
-    
-    if not valid_manual_check.empty:
-        valid_manual_copy = valid_manual_check.copy()
-        valid_manual_copy['편명'] = valid_manual_copy['편명'].astype(str).apply(clean_flight_no)
-        p_all.append(valid_manual_copy)
-
-    # 2. 승객수 파일 합치기
     for f in pax_files:
         df = smart_read(f)
         if df is not None:
             dl_df = parse_dl_pax(df)
-            if dl_df is not None and not dl_df.empty:
+            if dl_df is not None:
                 p_all.append(dl_df)
             else:
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
                 p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
-                t_c_p = find_col(df, ['TIME', 'STA', '시간', 'ETA']) # 💡 수정포인트: 승객수 파일에서도 시간을 찾아서 보존함
-                
                 if f_c and p_c:
-                    cols = [f_c, p_c]
-                    new_cols = ['편명', '승객수']
-                    if r_c: 
-                        cols.append(r_c); new_cols.append('출발지')
-                    if t_c_p: 
-                        cols.append(t_c_p); new_cols.append('시간_p')
-                    
-                    tmp = df[cols].copy()
-                    tmp.columns = new_cols
+                    tmp = df[[f_c, p_c]].copy()
+                    if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
+                    tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                     tmp['편명'] = tmp['편명'].apply(clean_flight_no)
-                    if not tmp.empty:
-                        p_all.append(tmp)
+                    p_all.append(tmp)
 
-    # 3. 게이트 파일 합치기
     for f in gate_files:
         df = smart_read(f)
         if df is not None:
@@ -261,133 +223,116 @@ else:
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
             if f_c and g_c and t_c:
                 tmp = df[[f_c, g_c, t_c]].copy()
-                if r_c: 
-                    tmp['출발지'] = df[r_c].apply(clean_route)
-                    tmp.columns = ['편명', '게이트', '시간_g', '출발지']
-                else: 
-                    tmp.columns = ['편명', '게이트', '시간_g']
+                if r_c: tmp['출발지'] = df[r_c].apply(clean_route)
+                tmp.columns = ['편명', '게이트', '시간', '출발지'] if r_c else ['편명', '게이트', '시간']
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
-                if not tmp.empty:
-                    g_all.append(tmp)
+                g_all.append(tmp)
 
-    # 4. 데이터 병합 및 시각화
-    if p_all:
-        df_p = pd.concat(p_all).drop_duplicates('편명', keep='last')
-        df_p = df_p[df_p['편명'] != ""]
-        
-        df_g = pd.DataFrame(columns=['편명']) # 게이트가 없어도 작동하도록 빈 프레임 할당
-        if g_all:
-            df_g = pd.concat(g_all).drop_duplicates('편명')
-            df_g = df_g[df_g['편명'] != ""]
-            
-        # 💡 수정포인트: INNER JOIN -> RIGHT JOIN (게이트 정보가 매칭 안돼도 승객 데이터는 100% 보존)
-        final = pd.merge(df_g, df_p, on='편명', how='right')
+    if p_all and g_all:
+        df_p = pd.concat(p_all).drop_duplicates('편명')
+        df_g = pd.concat(g_all).drop_duplicates('편명')
+        final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
         
         if not final.empty:
-            # 💡 수정포인트: 승객수에 콤마(,)가 포함되어 숫자가 0으로 날아가는 현상 원천 차단
-            final['승객수'] = final['승객수'].astype(str).str.replace(',', '', regex=False).str.replace('명', '', regex=False)
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
-            
-            # 승객수가 0명(빈칸, 결측치 등)인 데이터는 제외
-            final = final[final['p_val'] > 0]
-            
-            # --- [시간 및 데이터 결측치 복원 로직] ---
-            if '시간_g' in final.columns and '시간_p' in final.columns:
-                final['시간'] = final['시간_g'].fillna(final['시간_p'])
-            elif '시간_g' in final.columns:
-                final['시간'] = final['시간_g']
-            elif '시간_p' in final.columns:
-                final['시간'] = final['시간_p']
-            else:
-                final['시간'] = '00:00'
-            final['시간'] = final['시간'].fillna('00:00')
-            
-            # 출발지 통합 처리
-            cols_check = [c for c in final.columns if '출발지' in c]
-            if len(cols_check) > 1: final['출발지'] = final[cols_check[0]].fillna(final[cols_check[1]])
-            elif len(cols_check) == 1: final['출발지'] = final[cols_check[0]]
-            else: final['출발지'] = ''
-            final['출발지'] = final['출발지'].fillna('')
-
-            if '게이트' not in final.columns:
-                final['게이트'] = '미정'
-            final['게이트'] = final['게이트'].fillna('미정').astype(str).str.strip()
-            
-            final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)', expand=False).fillna(0).astype(int)
+            final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
-            
-            # 💡 수정포인트: '250A' 같은 문자열 게이트도 숫자만 똑똑하게 분리해서 에러 방지
-            final['g_num'] = pd.to_numeric(final['게이트'].str.extract(r'(\d+)', expand=False), errors='coerce').fillna(0)
+            final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
             final['구역'] = final['g_num'].apply(lambda x: '서편' if 0 < x <= 250 else '동편')
+            final['게이트'] = final['g_num'].astype(int).astype(str)
             
             total_p = final['p_val'].sum()
             def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
             ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
 
-            # --- 결과 출력 및 자바스크립트 캡처/인쇄 버튼 ---
+            # --- 결과 출력 ---
             st.components.v1.html(
                 """
                 <style>
                 body { margin: 0; padding: 0; overflow: hidden; display: flex; gap: 10px; }
-                .custom-btn { background-color: white; border: 1px solid #dcdcdc; color: #31333f; padding: 6px 15px; font-size: 14px; border-radius: 6px; cursor: pointer; font-family: sans-serif; box-shadow: 0px 1px 3px rgba(0,0,0,0.1); }
+                .custom-btn {
+                    background-color: white; border: 1px solid #dcdcdc; color: #31333f;
+                    padding: 6px 15px; font-size: 14px; border-radius: 6px; cursor: pointer;
+                    font-family: sans-serif; box-shadow: 0px 1px 3px rgba(0,0,0,0.1);
+                }
                 .custom-btn:hover { border-color: #ff4b4b; color: #ff4b4b; }
                 </style>
-                <button class="custom-btn" onclick="prepareAndPrint()">📄 PDF 저장</button>
+                <button class="custom-btn" onclick="window.parent.print()">📄 PDF 저장</button>
                 <button class="custom-btn" onclick="takePic()" id="pic-btn">📸 전체 사진으로 저장</button>
                 
                 <script>
-                function getHidableElements(doc) {
-                    var elements = Array.from(doc.querySelectorAll('[data-testid="stSidebar"], header, iframe, .no-print, .manual-box'));
-                    var editors = Array.from(doc.querySelectorAll('[data-testid="stDataEditor"]'));
-                    editors.forEach(function(ed) {
-                        var p = ed.closest('[data-testid="stElementContainer"]');
-                        if(p) elements.push(p);
-                        elements.push(ed);
-                    });
-                    var btns = Array.from(doc.querySelectorAll('button')).filter(b => b.innerText.includes('저장'));
-                    btns.forEach(function(b) {
-                        var p = b.closest('[data-testid="stElementContainer"]');
-                        if(p) elements.push(p);
-                        elements.push(b);
-                    });
-                    return elements;
-                }
-
-                function prepareAndPrint() {
-                    var win = window.parent; var doc = win.document;
-                    var hides = getHidableElements(doc);
-                    hides.forEach(function(e){ e.dataset.oldPrint = e.style.display; e.style.display = 'none'; });
-                    win.print();
-                    setTimeout(function() { hides.forEach(function(e){ e.style.display = e.dataset.oldPrint || ''; }); }, 800);
-                }
-
                 function takePic() {
-                    var btn = document.getElementById('pic-btn'); btn.innerText = "⏳ 캡처 중...";
+                    var btn = document.getElementById('pic-btn');
+                    btn.innerText = "⏳ 전체 화면 캡처 중... 잠시만요!";
                     try {
-                        var win = window.parent; var doc = win.document;
-                        if (!win.html2canvas) { var script = doc.createElement('script'); script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"; script.onload = function() { doCap(win, doc, btn); }; doc.head.appendChild(script); } else { doCap(win, doc, btn); }
-                    } catch(e) { alert("캡처 오류"); btn.innerText = "📸 전체 사진으로 저장"; }
+                        var win = window.parent;
+                        var doc = win.document;
+                        
+                        if (!win.html2canvas) {
+                            var script = doc.createElement('script');
+                            script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                            script.onload = function() { doCap(win, doc, btn); };
+                            script.onerror = function() { 
+                                alert("⚠️ 라이브러리를 불러올 수 없습니다."); 
+                                btn.innerText = "📸 전체 사진으로 저장"; 
+                            };
+                            doc.head.appendChild(script);
+                        } else {
+                            doCap(win, doc, btn);
+                        }
+                    } catch(e) {
+                        alert("⚠️ 브라우저 보안 설정으로 인해 캡처가 차단되었습니다.");
+                        btn.innerText = "📸 전체 사진으로 저장";
+                    }
                 }
-
+                
                 function doCap(win, doc, btn) {
                     var target = doc.querySelector('.block-container') || doc.querySelector('.main');
-                    var hides = getHidableElements(doc);
+                    var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe');
+                    
                     var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
                     var mainView = doc.querySelector('.main');
-                    var oldAppOverflow = appView ? appView.style.overflow : ''; var oldAppHeight = appView ? appView.style.height : ''; var oldMainOverflow = mainView ? mainView.style.overflow : ''; var oldMainHeight = mainView ? mainView.style.height : '';
+                    
+                    var oldAppOverflow = appView ? appView.style.overflow : '';
+                    var oldAppHeight = appView ? appView.style.height : '';
+                    var oldMainOverflow = mainView ? mainView.style.overflow : '';
+                    var oldMainHeight = mainView ? mainView.style.height : '';
+
+                    var oldTargetPaddingTop = target.style.paddingTop;
+                    var oldTargetMarginTop = target.style.marginTop;
+
                     if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                     if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
-                    var oldPadding = target.style.paddingTop; var oldMargin = target.style.marginTop;
-                    target.style.paddingTop = '0px'; target.style.marginTop = '0px';
+
+                    target.style.paddingTop = '0px';
+                    target.style.marginTop = '0px';
+
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
+                    
                     setTimeout(function() {
-                        win.html2canvas(target, { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0, windowWidth: target.scrollWidth, windowHeight: target.scrollHeight }).then(function(canvas) {
-                            var link = doc.createElement('a'); link.download = '보안검색_잡지_전체.png'; link.href = canvas.toDataURL('image/png'); link.click();
+                        win.html2canvas(target, { 
+                            scale: 2, 
+                            useCORS: true, 
+                            backgroundColor: '#ffffff',
+                            scrollY: 0,
+                            windowWidth: target.scrollWidth,
+                            windowHeight: target.scrollHeight 
+                        }).then(function(canvas) {
+                            var link = doc.createElement('a');
+                            link.download = '보안검색_잡지_전체.png';
+                            link.href = canvas.toDataURL('image/png');
+                            link.click();
+                        }).catch(function(err) {
+                            alert("사진 생성 중 오류가 발생했습니다.");
                         }).finally(function() {
                             if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
                             if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
-                            target.style.paddingTop = oldPadding; target.style.marginTop = oldMargin;
-                            hides.forEach(function(e){ e.style.display = e.dataset.old || ''; }); btn.innerText = "📸 전체 사진으로 저장";
+                            
+                            target.style.paddingTop = oldTargetPaddingTop;
+                            target.style.marginTop = oldTargetMarginTop;
+
+                            hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
+                            btn.innerText = "📸 전체 사진으로 저장";
                         });
                     }, 800);
                 }
