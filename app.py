@@ -278,6 +278,10 @@ else:
         df_g = pd.concat(g_all).drop_duplicates('편명')
         final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
         
+        # ⭐️ [추가] 김해(PUS/부산) 노선 제외 처리 ⭐️
+        if '출발지' in final.columns:
+            final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
+        
         if not final.empty:
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
             final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
