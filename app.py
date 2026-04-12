@@ -61,12 +61,36 @@ def smart_read(file):
     try:
         filename = file.name.lower()
         if filename.endswith('.csv'):
-            try: return pd.read_csv(file, encoding='utf-8')
-            except: return pd.read_csv(file, encoding='cp949')
-        return pd.read_excel(file, engine='openpyxl')
+            try: df = pd.read_csv(file, encoding='utf-8')
+            except: df = pd.read_csv(file, encoding='cp949')
+        else:
+            df = pd.read_excel(file, engine='openpyxl')
     except:
-        try: return pd.read_excel(file)
+        try: df = pd.read_excel(file)
         except: return None
+        
+    if df is None or df.empty: return None
+
+    # ⭐️ [수정 1] 빈 줄 무시 및 진짜 헤더 찾기 로직 추가
+    all_data = [df.columns.tolist()] + df.values.tolist()
+    header_idx = -1
+    
+    # 상위 20줄 안에서 핵심 키워드를 찾아 진짜 헤더 위치를 파악
+    for i, row in enumerate(all_data[:20]):
+        row_str = "".join([str(x).upper() for x in row])
+        if 'FLT' in row_str or '편명' in row_str or 'FLIGHT' in row_str:
+            header_idx = i
+            break
+            
+    if header_idx > 0:
+        new_header = all_data[header_idx]
+        new_data = all_data[header_idx+1:]
+        df = pd.DataFrame(new_data, columns=new_header)
+        
+    # 헤더에 빈 값(NaN)이 있으면 문자열로 변환하여 에러 방지
+    df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
+    
+    return df
 
 def parse_dl_pax(df):
     if df is None or df.empty: return None
@@ -174,9 +198,12 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
                 row_style_css = "background-color: #FFF5F8;" 
 
         td_style = f' style="{row_style_css} font-size: {font_size}px !important;"'
+        
+        # ⭐️ [수정 2] KeyError: '출발지' 방지 (안전하게 데이터 가져오기)
+        route_val = row.get("출발지", "")
 
         html += f'<tr>'
-        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["출발지"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
+        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
         if curr_h not in processed_hours:
             sum_font = font_size + 1
