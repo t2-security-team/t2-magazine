@@ -201,12 +201,12 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
 
         td_style = f' style="{row_style_css} font-size: {font_size}px !important;"'
         
-        # ⭐️ [수정 2] KeyError: '출발지' 방지 (안전하게 데이터 가져오기)
+        # ⭐️ KeyError: '출발지' 방지 (안전하게 데이터 가져오기)
         route_val = row.get("출발지", "")
 
         html += f'<tr>'
-        # 편명과 출발지 데이터 셀 순서 변경
-        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
+        # 편명과 출발지 데이터 셀 순서 변경 및 승객수 빈칸(p_display) 처리 적용
+        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_display"]}</td>'
         
         if curr_h not in processed_hours:
             sum_font = font_size + 1
@@ -332,7 +332,22 @@ else:
             final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
         
         if not final.empty:
+            # ⭐️ [수정] 덧셈 계산용 p_val과 화면 표시용 p_display 분리
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
+            
+            def format_pax_display(val):
+                if pd.isna(val) or str(val).strip() == '':
+                    return ""
+                try:
+                    cleaned_val = str(val).replace(',', '').strip()
+                    if cleaned_val == '':
+                        return ""
+                    return f"{int(float(cleaned_val)):,}"
+                except:
+                    return ""
+                    
+            final['p_display'] = final['승객수'].apply(format_pax_display)
+
             final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
             final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
