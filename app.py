@@ -165,8 +165,9 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
     html += f'<table class="merged-table" style="font-size: {font_size}px !important;"><thead><tr>'
     html += f'<th style="width:14%; font-size:{font_size}px !important;">예상시간</th>'
     html += f'<th style="width:12%; font-size:{font_size}px !important;">시간</th>'
-    html += f'<th style="font-size:{font_size}px !important;">출발지</th>'
+    # 편명과 출발지 헤더 순서 변경
     html += f'<th style="width:14%; font-size:{font_size}px !important;">편명</th>'
+    html += f'<th style="font-size:{font_size}px !important;">출발지</th>'
     html += f'<th style="width:11%; font-size:{font_size}px !important;">게이트</th>'
     html += f'<th style="width:11%; font-size:{font_size}px !important;">승객</th>'
     html += f'<th style="width:11%; font-size:{font_size}px !important;">합계</th>'
@@ -203,7 +204,8 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
         route_val = row.get("출발지", "")
 
         html += f'<tr>'
-        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
+        # 편명과 출발지 데이터 셀 순서 변경
+        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_val"]:,}</td>'
         
         if curr_h not in processed_hours:
             sum_font = font_size + 1
