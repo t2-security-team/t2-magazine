@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+from datetime import datetime, timedelta
 
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
@@ -221,6 +222,25 @@ with st.sidebar:
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
+    # ⭐️ 1. 표시 날짜 선택 기능 추가
+    date_option = st.radio(
+        "📅 표시 날짜 선택",
+        ["어제 (-1일)", "오늘", "내일 (+1일)"],
+        index=1
+    )
+    
+    # 선택된 날짜 계산 로직
+    today_date = datetime.now()
+    if date_option == "어제 (-1일)":
+        target_date = today_date - timedelta(days=1)
+    elif date_option == "내일 (+1일)":
+        target_date = today_date + timedelta(days=1)
+    else:
+        target_date = today_date
+        
+    display_date_str = target_date.strftime("%Y년 %m월 %d일")
+    
+    st.divider()
     # ⭐️ 출발지 표시 형식 라디오 버튼 추가
     route_option = st.radio(
         "🌍 출발지 표기 방식",
@@ -425,8 +445,12 @@ else:
                 """, height=45
             )
 
+            # ⭐️ 2. 총 승객수 배너 영역 우측에 날짜 표시
             st.markdown(f"""
-                <div class="total-banner"><h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3></div>
+                <div class="total-banner" style="position: relative;">
+                    <h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3>
+                    <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #1E3A8A; font-size: 16px;">{display_date_str}</div>
+                </div>
                 <div class="carrier-banner">
                     <span class="carrier-item">KE: <span style="color:#1E3A8A;">{ke_s:,}</span>명</span>
                     <span class="carrier-item">OZ: <span style="color:#1E3A8A;">{oz_s:,}</span>명</span>
