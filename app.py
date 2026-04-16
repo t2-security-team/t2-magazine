@@ -19,7 +19,8 @@ st.markdown("""
     .merged-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
-    .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; }
+    /* ⭐️ [수정] 표 안의 데이터 셀 글씨를 진하게(bold) 설정 */
+    .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; font-weight: bold !important; }
     
     /* 합계 셀 기본 스타일 */
     .sum-cell { font-weight: bold; color: #1E3A8A; vertical-align: middle !important; }
@@ -199,7 +200,8 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             elif curr_h == 18:
                 row_style_css = "background-color: #FFF5F8;" 
 
-        td_style = f' style="{row_style_css} font-size: {font_size}px !important;"'
+        # ⭐️ [수정] 이중 안전장치로 인라인 스타일에도 font-weight: bold!important; 추가
+        td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
         
         # ⭐️ KeyError: '출발지' 방지 (안전하게 데이터 가져오기)
         route_val = row.get("출발지", "")
@@ -210,7 +212,7 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
         
         if curr_h not in processed_hours:
             sum_font = font_size + 1
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: #ffffff !important; font-size: {sum_font}px !important;"><div style="position: relative; z-index: 10;">{hour_sums[curr_h]:,}</div></td>'
+            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: #ffffff !important; font-size: {sum_font}px !important; font-weight: bold !important;"><div style="position: relative; z-index: 10;">{hour_sums[curr_h]:,}</div></td>'
             processed_hours.add(curr_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
@@ -260,11 +262,11 @@ with st.sidebar:
     # ⭐️ 표 글자 크기: 10 ~ 17px 제한
     base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
 
-# 이중 안전장치: 전역 CSS에도 폰트 사이즈 삽입
+# 이중 안전장치: 전역 CSS에도 폰트 사이즈 삽입 및 font-weight 추가
 st.markdown(f"""
     <style>
-    .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; }}
-    .sum-cell {{ font-size: {base_font_size + 1}px !important; }}
+    .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
+    .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
     </style>
 """, unsafe_allow_html=True)
 
