@@ -251,9 +251,17 @@ with st.sidebar:
     )
     
     st.divider()
-    st.markdown("### 🎨 시각화 옵션")
-    opt_airline = st.checkbox("1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
-    opt_peak = st.checkbox("2. ⏰ 첨두시간 색상 표시 (16~18시)")
+    
+    # ⭐️ 중복 선택 방지를 위해 시각화 옵션을 라디오 버튼으로 교체 (### 제거됨)
+    vis_option = st.radio(
+        "🎨 시각화 옵션",
+        ["적용 안 함", "1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)", "2. ⏰ 첨두시간 색상 표시 (16~18시)"],
+        index=0
+    )
+    
+    # 선택 결과에 따라 기존 변수(opt_airline, opt_peak)에 True/False 할당 (기존 로직 완벽 호환)
+    opt_airline = (vis_option == "1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
+    opt_peak = (vis_option == "2. ⏰ 첨두시간 색상 표시 (16~18시)")
     
     st.divider()
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
