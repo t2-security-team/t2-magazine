@@ -440,7 +440,7 @@ else:
                     
                     setTimeout(function() {
                         win.html2canvas(target, { 
-                            scale: 2, 
+                            scale: 4, // ⭐️ 화질 대폭 개선 (기존 2 -> 4로 변경)
                             useCORS: true, 
                             backgroundColor: '#ffffff'
                         }).then(function(canvas) {
