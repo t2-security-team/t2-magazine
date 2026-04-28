@@ -73,7 +73,7 @@ def smart_read(file):
         
     if df is None or df.empty: return None
 
-    # ⭐️ [수정 1] 빈 줄 무시 및 진짜 헤더 찾기 로직 추가
+    # ⭐️ 빈 줄 무시 및 진짜 헤더 찾기 로직 추가
     all_data = [df.columns.tolist()] + df.values.tolist()
     header_idx = -1
     
@@ -137,15 +137,14 @@ def find_col(df, keywords):
             if key.upper() in clean_col: return col
     return None
 
-# ⭐️ 출발지 포맷팅 함수 (선택값에 따라 변환)
 def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
     match = re.search(r'(.*?)\s*\(([A-Za-z0-9]+)\)', val)
     
     if match:
-        city = match.group(1).split('/')[0].strip() # 한글 (예: 방콕)
-        code = match.group(2).strip().upper()       # 영어 (예: BKK)
+        city = match.group(1).split('/')[0].strip() # 한글
+        code = match.group(2).strip().upper()       # 영어
         
         if option == "한글 (도시명)":
             return city
@@ -167,7 +166,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
     html += f'<table class="merged-table" style="font-size: {font_size}px !important;"><thead><tr>'
     html += f'<th style="width:14%; font-size:{font_size}px !important;">예상시간</th>'
     html += f'<th style="width:12%; font-size:{font_size}px !important;">시간</th>'
-    # 편명과 출발지 헤더 순서 변경
     html += f'<th style="width:14%; font-size:{font_size}px !important;">편명</th>'
     html += f'<th style="font-size:{font_size}px !important;">출발지</th>'
     html += f'<th style="width:11%; font-size:{font_size}px !important;">게이트</th>'
@@ -200,14 +198,10 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             elif curr_h == 18:
                 row_style_css = "background-color: #FFF5F8;" 
 
-        # ⭐️ [수정] 이중 안전장치로 인라인 스타일에도 font-weight: bold!important; 추가
         td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
-        
-        # ⭐️ KeyError: '출발지' 방지 (안전하게 데이터 가져오기)
         route_val = row.get("출발지", "")
 
         html += f'<tr>'
-        # 편명과 출발지 데이터 셀 순서 변경 및 승객수 빈칸(p_display) 처리 적용
         html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_display"]}</td>'
         
         if curr_h not in processed_hours:
@@ -224,14 +218,12 @@ with st.sidebar:
     gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
-    # ⭐️ 1. 표시 날짜 선택 기능 추가
     date_option = st.radio(
         "📅 표시 날짜 선택",
         ["어제 (-1일)", "오늘", "내일 (+1일)"],
         index=1
     )
     
-    # 선택된 날짜 계산 로직
     today_date = datetime.now()
     if date_option == "어제 (-1일)":
         target_date = today_date - timedelta(days=1)
@@ -243,7 +235,6 @@ with st.sidebar:
     display_date_str = target_date.strftime("%Y년 %m월 %d일")
     
     st.divider()
-    # ⭐️ 출발지 표시 형식 라디오 버튼 추가
     route_option = st.radio(
         "🌍 출발지 표기 방식",
         ["한글+영어 (혼합)", "한글 (도시명)", "영어 (쓰리코드)"],
@@ -251,15 +242,12 @@ with st.sidebar:
     )
     
     st.divider()
-    
-    # ⭐️ 중복 선택 방지를 위해 시각화 옵션을 라디오 버튼으로 교체 (### 제거됨)
     vis_option = st.radio(
         "🎨 시각화 옵션",
         ["적용 안 함", "1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)", "2. ⏰ 첨두시간 색상 표시 (16~18시)"],
         index=0
     )
     
-    # 선택 결과에 따라 기존 변수(opt_airline, opt_peak)에 True/False 할당 (기존 로직 완벽 호환)
     opt_airline = (vis_option == "1. ✈️ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
     opt_peak = (vis_option == "2. ⏰ 첨두시간 색상 표시 (16~18시)")
     
@@ -267,10 +255,8 @@ with st.sidebar:
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
     
     st.divider()
-    # ⭐️ 표 글자 크기: 10 ~ 17px 제한
     base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
 
-# 이중 안전장치: 전역 CSS에도 폰트 사이즈 삽입 및 font-weight 추가
 st.markdown(f"""
     <style>
     .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
@@ -311,7 +297,6 @@ else:
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
                 if f_c and p_c:
                     tmp = df[[f_c, p_c]].copy()
-                    # ⭐️ 출발지 변환 시 라디오버튼 선택값(route_option) 반영
                     if r_c: tmp['출발지'] = df[r_c].apply(lambda x: format_route(x, route_option))
                     tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                     tmp['편명'] = tmp['편명'].apply(clean_flight_no)
@@ -326,7 +311,6 @@ else:
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
             if f_c and g_c and t_c:
                 tmp = df[[f_c, g_c, t_c]].copy()
-                # ⭐️ 출발지 변환 시 라디오버튼 선택값(route_option) 반영
                 if r_c: tmp['출발지'] = df[r_c].apply(lambda x: format_route(x, route_option))
                 tmp.columns = ['편명', '게이트', '시간', '출발지'] if r_c else ['편명', '게이트', '시간']
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
@@ -337,12 +321,11 @@ else:
         df_g = pd.concat(g_all).drop_duplicates('편명')
         final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
         
-        # ⭐️ [추가] 김해(PUS/부산) 노선 제외 처리 ⭐️
+        # ⭐️ 김해(PUS/부산) 노선 제외 처리 ⭐️
         if '출발지' in final.columns:
             final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
         
         if not final.empty:
-            # ⭐️ [수정] 덧셈 계산용 p_val과 화면 표시용 p_display 분리
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
             
             def format_pax_display(val):
@@ -424,7 +407,6 @@ else:
                     var oldTargetPaddingTop = target.style.paddingTop;
                     var oldTargetMarginTop = target.style.marginTop;
                     
-                    // ⭐️ 사진을 찍을 때 도화지(너비)를 A4 비율과 비슷한 1100px로 강제 고정! (글자가 상대적으로 작아지는 현상 방지)
                     var oldTargetWidth = target.style.width;
                     var oldTargetMaxWidth = target.style.maxWidth;
 
@@ -433,14 +415,14 @@ else:
 
                     target.style.paddingTop = '10px';
                     target.style.marginTop = '0px';
-                    target.style.width = '1100px';      // 강제 고정 너비
-                    target.style.maxWidth = '1100px';   // 강제 고정 최대 너비
+                    target.style.width = '1100px'; 
+                    target.style.maxWidth = '1100px';
 
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                     
                     setTimeout(function() {
                         win.html2canvas(target, { 
-                            scale: 4, // ⭐️ 화질 대폭 개선 (기존 2 -> 4로 변경)
+                            scale: 6, // ⭐️ 화질 대폭 개선 (기존 4 -> 6으로 변경)
                             useCORS: true, 
                             backgroundColor: '#ffffff'
                         }).then(function(canvas) {
@@ -457,7 +439,6 @@ else:
                             target.style.paddingTop = oldTargetPaddingTop;
                             target.style.marginTop = oldTargetMarginTop;
                             
-                            // ⭐️ 캡처가 끝나면 너비 다시 원래대로 원상복구
                             target.style.width = oldTargetWidth;
                             target.style.maxWidth = oldTargetMaxWidth;
 
@@ -470,7 +451,7 @@ else:
                 """, height=45
             )
 
-            # ⭐️ 2. 총 승객수 배너 영역 우측에 날짜 표시
+            # ⭐️ 총 승객수 배너 영역 우측에 날짜 표시
             st.markdown(f"""
                 <div class="total-banner" style="position: relative;">
                     <h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3>
