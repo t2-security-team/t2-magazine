@@ -140,12 +140,22 @@ def find_col(df, keywords):
 def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
+    
+    # ⭐️ 1. '오클랜드(뉴질랜드)' 같은 한글로 된 괄호 부분 제거
+    val = re.sub(r'\([가-힣\s]+\)', '', val).strip()
+    
     match = re.search(r'(.*?)\s*\(([A-Za-z0-9]+)\)', val)
     
     if match:
         city = match.group(1).split('/')[0].strip() # 한글
         code = match.group(2).strip().upper()       # 영어
         
+        # ⭐️ 2. HND, NRT 예외 처리 (도쿄 대신 하네다, 나리타로 강제 변경)
+        if code == "HND":
+            city = "하네다"
+        elif code == "NRT":
+            city = "나리타"
+            
         if option == "한글 (도시명)":
             return city
         elif option == "영어 (쓰리코드)":
@@ -153,7 +163,20 @@ def format_route(val, option):
         else: # 한글+영어 (혼합)
             return f"{city}({code})"
             
-    if '/' in val: return val.split('/')[0].strip()
+    if '/' in val: 
+        val = val.split('/')[0].strip()
+        
+    # 쓰리코드나 도시명만 단독으로 들어왔을 경우 예외 처리
+    val_upper = val.upper()
+    if val_upper == "HND" or "HND" in val_upper:
+        if option == "한글 (도시명)": return "하네다"
+        elif option == "영어 (쓰리코드)": return "HND"
+        else: return "하네다(HND)"
+    elif val_upper == "NRT" or "NRT" in val_upper:
+        if option == "한글 (도시명)": return "나리타"
+        elif option == "영어 (쓰리코드)": return "NRT"
+        else: return "나리타(NRT)"
+        
     return val
 
 def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_size):
@@ -422,7 +445,7 @@ else:
                     
                     setTimeout(function() {
                         win.html2canvas(target, { 
-                            scale: 6, // ⭐️ 화질 대폭 개선 (기존 4 -> 6으로 변경)
+                            scale: 6, // ⭐️ 화질 대폭 개선
                             useCORS: true, 
                             backgroundColor: '#ffffff'
                         }).then(function(canvas) {
@@ -451,7 +474,7 @@ else:
                 """, height=45
             )
 
-            # ⭐️ 총 승객수 배너 영역 우측에 날짜 표시
+            # ⭐️ 총 승객수 배너 영역
             st.markdown(f"""
                 <div class="total-banner" style="position: relative;">
                     <h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3>
