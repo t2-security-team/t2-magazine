@@ -332,10 +332,24 @@ else:
             g_c = find_col(df, ['GN', 'GATE', '게이트', 'G/N'])
             t_c = find_col(df, ['TIME', 'STA', '시간'])
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+            # ⭐️ [추가] 입국장 출구 열 찾기
+            e_c = find_col(df, ['출구', '입국장', 'EXIT']) 
+            
             if f_c and g_c and t_c:
-                tmp = df[[f_c, g_c, t_c]].copy()
-                if r_c: tmp['출발지'] = df[r_c].apply(lambda x: format_route(x, route_option))
-                tmp.columns = ['편명', '게이트', '시간', '출발지'] if r_c else ['편명', '게이트', '시간']
+                cols_to_extract = [f_c, g_c, t_c]
+                col_names = ['편명', '게이트', '시간']
+                
+                if r_c:
+                    cols_to_extract.append(r_c)
+                    col_names.append('출발지')
+                if e_c: # 출구 열이 있으면 추가
+                    cols_to_extract.append(e_c)
+                    col_names.append('출구')
+                    
+                tmp = df[cols_to_extract].copy()
+                tmp.columns = col_names
+                
+                if r_c: tmp['출발지'] = tmp['출발지'].apply(lambda x: format_route(x, route_option))
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                 g_all.append(tmp)
 
@@ -366,9 +380,33 @@ else:
 
             final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
+            
+            # '출구' 열이 없을 수도 있으므로 기본값 설정
+            if '출구' not in final.columns:
+                final['출구'] = ""
+                
             final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
-            final['구역'] = final['g_num'].apply(lambda x: '서편' if 0 < x <= 250 else '동편')
-            final['게이트'] = final['g_num'].astype(int).astype(str)
+            
+            # ⭐️ [수정] 구역 및 게이트 번호 할당 로직 (게이트 번호가 비어있을 때 A/B 판단)
+            def get_zone(row):
+                if row['g_num'] > 0:
+                    return '서편' if 0 < row['g_num'] <= 250 else '동편'
+                else:
+                    exit_val = str(row.get('출구', '')).strip().upper()
+                    if exit_val == 'A': return '서편'
+                    if exit_val == 'B': return '동편'
+                    return '동편' # A, B도 아닌 예외상황시 기본값
+
+            def get_gate_str(row):
+                if row['g_num'] > 0:
+                    return str(int(row['g_num']))
+                else:
+                    exit_val = str(row.get('출구', '')).strip().upper()
+                    if exit_val in ['A', 'B']: return '-'
+                    return '-'
+            
+            final['구역'] = final.apply(get_zone, axis=1)
+            final['게이트'] = final.apply(get_gate_str, axis=1)
             
             total_p = final['p_val'].sum()
             def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
