@@ -65,7 +65,11 @@ def smart_read(file):
         if filename.endswith('.csv'):
             try: df = pd.read_csv(file, encoding='utf-8')
             except: df = pd.read_csv(file, encoding='cp949')
+        elif filename.endswith('.xls'):
+            # ⭐️ .xls 파일을 읽기 위해 xlrd 엔진 사용
+            df = pd.read_excel(file, engine='xlrd')
         else:
+            # .xlsx 등 나머지 엑셀 파일은 openpyxl 엔진 사용
             df = pd.read_excel(file, engine='openpyxl')
     except:
         try: df = pd.read_excel(file)
@@ -237,8 +241,8 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
 # --- [사이드바 설정] ---
 with st.sidebar:
     st.header("📂 데이터 업로드")
-    pax_files = st.file_uploader("1. 승객수 파일 (.xlsx, .csv)", accept_multiple_files=True)
-    gate_files = st.file_uploader("2. 게이트 파일 (.xlsx, .csv)", accept_multiple_files=True)
+    pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
+    gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
     date_option = st.radio(
@@ -298,10 +302,9 @@ if not (pax_files and gate_files):
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
         * **- 인천공항 도착편, T2, 날짜, 시간대(00:00~23:59) 설정 후 검색, 엑셀 다운로드**
 
-        ### 2. 중요: 파일 형식 필수 변환
-        * 본 시스템은 **.xlsx 형식만 지원**합니다.
-        * **인천공항 도착편** 다운로드 파일은 그대로 올리면 읽히지 않습니다.
-        * **방법:** 파일을 열어 **[다른 이름으로 저장]** → 파일 형식을 **[Excel 통합 문서 (*.xlsx)]**로 선택하여 저장 후 업로드하세요.
+        ### 2. 파일 형식 안내
+        * 본 시스템은 **.xls, .xlsx, .csv 형식을 모두 지원**합니다.
+        * 번거롭게 변환할 필요 없이 다운로드 받은 원본 파일 그대로 업로드하셔도 정상적으로 작동합니다.
 
         ### 3. 기타 안내사항
         * **델타 이메일 :** 승객수가 사진으로 왔을 때에는 이메일로 받은 대한항공 잡지 밑에 직접 입력해주거나 이전에 온 델타 파일을 찾아서 승객수만 바꿔서 입력해서 저장 후 업로드하세요.
