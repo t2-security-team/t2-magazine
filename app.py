@@ -192,7 +192,7 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
     processed_hours = set()
     
     for i, row in df.iterrows():
-        curr_h = row['hour_val']
+        current_h = row['hour_val']
         flt = str(row['편명']).upper()
         
         row_style_css = ""
@@ -201,9 +201,9 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             if flt.startswith("DL"): row_style_css = "background-color: #E3F2FD;" 
             elif flt.startswith("OZ"): row_style_css = "background-color: #FDF4F7;" 
         elif opt_peak:
-            if curr_h == 16: row_style_css = "background-color: #F4FAFD;" 
-            elif curr_h == 17: row_style_css = "background-color: #FFFDF0;" 
-            elif curr_h == 18: row_style_css = "background-color: #FFF5F8;" 
+            if current_h == 16: row_style_css = "background-color: #F4FAFD;" 
+            elif current_h == 17: row_style_css = "background-color: #FFFDF0;" 
+            elif current_h == 18: row_style_css = "background-color: #FFF5F8;" 
 
         td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
         route_val = row.get("출발지", "")
@@ -211,10 +211,10 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
         html += f'<tr>'
         html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_display"]}</td>'
         
-        if curr_h not in processed_hours:
+        if current_h not in processed_hours:
             sum_font = font_size + 1
-            html += f'<td rowspan="{hour_counts[curr_h]}" class="sum-cell" style="background-color: #ffffff !important; font-size: {sum_font}px !important; font-weight: bold !important;"><div style="position: relative; z-index: 10;">{hour_sums[curr_h]:,}</div></td>'
-            processed_hours.add(curr_h)
+            html += f'<td rowspan="{hour_counts[current_h]}" class="sum-cell" style="background-color: #ffffff !important; font-size: {sum_font}px !important; font-weight: bold !important;"><div style="position: relative; z-index: 10;">{hour_sums[current_h]:,}</div></td>'
+            processed_hours.add(current_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
 
@@ -228,6 +228,18 @@ with st.sidebar:
     
     st.header("📂 데이터 업로드")
     pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
+    
+    # 🔺 델타항공 사진 수령 시 직접 입력 칸 (추가 입력란 삭제 버전)
+    with st.expander("🔺 델타항공 수동 입력 (사진 수령 시)", expanded=False):
+        st.markdown("<p style='font-size:12px; color:#555; margin-bottom:8px;'>사진에 표기된 <b>환승객수</b>를 편명에 맞게 입력하세요.</p>", unsafe_allow_html=True)
+        dl_fixed_flights = ["DL027", "DL189", "DL173", "DL159", "DL197", "DL171"]
+        manual_dl_data = []
+        
+        for flt in dl_fixed_flights:
+            pax_input = st.number_input(f"✈️ {flt}", min_value=0, value=0, step=1, key=f"man_{flt}")
+            if pax_input > 0:
+                manual_dl_data.append({'편명': flt, '승객수': pax_input})
+
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
@@ -280,12 +292,13 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- [메인 로직] ---
-if not (pax_files and gate_files):
+if not ((pax_files or manual_dl_data) and gate_files):
     st.markdown("<h2 style='text-align: center;'>✈️ T2 보안검색 환승부 잡지 ✈️</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 및 주의사항 (필독)", expanded=True):
         st.markdown("""
         ### 1. 파일 업로드 방법
         * **1번째 파일 업로드 (승객수 파일):** 이메일로 받은 승객수(T/S, Pax) 데이터 업로드
+        * **수동 입력 활성화 :** 델타항공 승객수가 사진으로 온 경우, 사이드바의 '🔺 델타항공 수동 입력' 상자를 열고 타이핑하세요.
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
         * **- 인천공항 도착편, T2, 날짜, 시간대(00:00~23:59) 설정 후 검색, 엑셀 다운로드**
 
@@ -294,10 +307,14 @@ if not (pax_files and gate_files):
         * 번거롭게 변환할 필요 없이 다운로드 받은 원본 파일 그대로 업로드하셔도 정상적으로 작동합니다.
 
         ### 3. 기타 안내사항
-        * **델타 이메일 :** 승객수가 사진으로 왔을 때에는 이메일로 받은 대한항공 잡지 밑에 직접 입력해주거나 이전에 온 델타 파일을 찾아서 승객수만 바꿔서 입력해서 저장 후 업로드하세요.
+        * **델타 이메일 :** 승객수가 사진으로 왔을 때는 엑셀 파일을 따로 수정할 필요 없이 왼쪽 수동 입력란에 숫자만 적어주시면 즉시 전체 집계에 자동 반영됩니다.
         """)
 else:
     p_all, g_all = [], []
+    
+    if manual_dl_data:
+        p_all.append(pd.DataFrame(manual_dl_data))
+        
     for f in pax_files:
         df = smart_read(f)
         if df is not None:
