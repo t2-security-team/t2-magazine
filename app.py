@@ -19,14 +19,13 @@ st.markdown("""
     .merged-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
     .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
-    /* ⭐️ [수정] 표 안의 데이터 셀 글씨를 진하게(bold) 설정 */
     .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; font-weight: bold !important; }
     
     /* 합계 셀 기본 스타일 */
     .sum-cell { font-weight: bold; color: #1E3A8A; vertical-align: middle !important; }
     
-    /* 배너 여백 최소화 */
-    .total-banner { background-color: #f0f7ff !important; padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
+    /* ⭐️ [수정] 배너 여백 최소화 (위아래 패딩 감소) */
+    .total-banner { background-color: #f0f7ff !important; padding: 4px 8px !important; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
     .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
     .carrier-item { font-size: 14px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
@@ -66,10 +65,8 @@ def smart_read(file):
             try: df = pd.read_csv(file, encoding='utf-8')
             except: df = pd.read_csv(file, encoding='cp949')
         elif filename.endswith('.xls'):
-            # ⭐️ .xls 파일을 읽기 위해 xlrd 엔진 사용
             df = pd.read_excel(file, engine='xlrd')
         else:
-            # .xlsx 등 나머지 엑셀 파일은 openpyxl 엔진 사용
             df = pd.read_excel(file, engine='openpyxl')
     except:
         try: df = pd.read_excel(file)
@@ -77,11 +74,9 @@ def smart_read(file):
         
     if df is None or df.empty: return None
 
-    # ⭐️ 빈 줄 무시 및 진짜 헤더 찾기 로직 추가
     all_data = [df.columns.tolist()] + df.values.tolist()
     header_idx = -1
     
-    # 상위 20줄 안에서 핵심 키워드를 찾아 진짜 헤더 위치를 파악
     for i, row in enumerate(all_data[:20]):
         row_str = "".join([str(x).upper() for x in row])
         if 'FLT' in row_str or '편명' in row_str or 'FLIGHT' in row_str:
@@ -93,7 +88,6 @@ def smart_read(file):
         new_data = all_data[header_idx+1:]
         df = pd.DataFrame(new_data, columns=new_header)
         
-    # 헤더에 빈 값(NaN)이 있으면 문자열로 변환하여 에러 방지
     df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     
     return df
@@ -145,32 +139,24 @@ def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
     
-    # ⭐️ 1. '오클랜드(뉴질랜드)' 같은 한글로 된 괄호 부분 제거
     val = re.sub(r'\([가-힣\s]+\)', '', val).strip()
-    
     match = re.search(r'(.*?)\s*\(([A-Za-z0-9]+)\)', val)
     
     if match:
-        city = match.group(1).split('/')[0].strip() # 한글
-        code = match.group(2).strip().upper()       # 영어
+        city = match.group(1).split('/')[0].strip() 
+        code = match.group(2).strip().upper()       
         
-        # ⭐️ 2. HND, NRT 예외 처리 (도쿄 대신 하네다, 나리타로 강제 변경)
         if code == "HND":
             city = "하네다"
         elif code == "NRT":
             city = "나리타"
             
-        if option == "한글 (도시명)":
-            return city
-        elif option == "영어 (쓰리코드)":
-            return code
-        else: # 한글+영어 (혼합)
-            return f"{city}({code})"
+        if option == "한글 (도시명)": return city
+        elif option == "영어 (쓰리코드)": return code
+        else: return f"{city}({code})"
             
-    if '/' in val: 
-        val = val.split('/')[0].strip()
+    if '/' in val: val = val.split('/')[0].strip()
         
-    # 쓰리코드나 도시명만 단독으로 들어왔을 경우 예외 처리
     val_upper = val.upper()
     if val_upper == "HND" or "HND" in val_upper:
         if option == "한글 (도시명)": return "하네다"
@@ -212,18 +198,12 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
         row_style_css = ""
         
         if opt_airline:
-            if flt.startswith("DL"):
-                row_style_css = "background-color: #E3F2FD;" 
-            elif flt.startswith("OZ"):
-                row_style_css = "background-color: #FDF4F7;" 
-            
+            if flt.startswith("DL"): row_style_css = "background-color: #E3F2FD;" 
+            elif flt.startswith("OZ"): row_style_css = "background-color: #FDF4F7;" 
         elif opt_peak:
-            if curr_h == 16:
-                row_style_css = "background-color: #F4FAFD;" 
-            elif curr_h == 17:
-                row_style_css = "background-color: #FFFDF0;" 
-            elif curr_h == 18:
-                row_style_css = "background-color: #FFF5F8;" 
+            if curr_h == 16: row_style_css = "background-color: #F4FAFD;" 
+            elif curr_h == 17: row_style_css = "background-color: #FFFDF0;" 
+            elif curr_h == 18: row_style_css = "background-color: #FFF5F8;" 
 
         td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
         route_val = row.get("출발지", "")
@@ -240,7 +220,6 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
 
 # --- [사이드바 설정] ---
 with st.sidebar:
-    # ⭐️ [추가된 부분] 즐겨찾기 링크 바로가기 버튼
     st.header("🔗 빠른 사이트 이동")
     st.link_button("✈️ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
@@ -258,7 +237,6 @@ with st.sidebar:
         index=1
     )
     
-    # ⭐️ 한국 시간(KST) 기준 설정 유지
     KST = timezone(timedelta(hours=9))
     today_date = datetime.now(KST)
     
@@ -300,7 +278,6 @@ st.markdown(f"""
     .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
     </style>
 """, unsafe_allow_html=True)
-
 
 # --- [메인 로직] ---
 if not (pax_files and gate_files):
@@ -345,7 +322,6 @@ else:
             g_c = find_col(df, ['GN', 'GATE', '게이트', 'G/N'])
             t_c = find_col(df, ['TIME', 'STA', '시간'])
             r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
-            # ⭐️ [추가] 입국장 출구 열 찾기
             e_c = find_col(df, ['출구', '입국장', 'EXIT']) 
             
             if f_c and g_c and t_c:
@@ -355,7 +331,7 @@ else:
                 if r_c:
                     cols_to_extract.append(r_c)
                     col_names.append('출발지')
-                if e_c: # 출구 열이 있으면 추가
+                if e_c: 
                     cols_to_extract.append(e_c)
                     col_names.append('출구')
                     
@@ -371,7 +347,6 @@ else:
         df_g = pd.concat(g_all).drop_duplicates('편명')
         final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
         
-        # ⭐️ 김해(PUS/부산) 노선 제외 처리 ⭐️
         if '출발지' in final.columns:
             final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
         
@@ -379,28 +354,22 @@ else:
             final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
             
             def format_pax_display(val):
-                if pd.isna(val) or str(val).strip() == '':
-                    return ""
+                if pd.isna(val) or str(val).strip() == '': return ""
                 try:
                     cleaned_val = str(val).replace(',', '').strip()
-                    if cleaned_val == '':
-                        return ""
+                    if cleaned_val == '': return ""
                     return f"{int(float(cleaned_val)):,}"
-                except:
-                    return ""
+                except: return ""
                     
             final['p_display'] = final['승객수'].apply(format_pax_display)
-
             final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
             final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
             
-            # '출구' 열이 없을 수도 있으므로 기본값 설정
             if '출구' not in final.columns:
                 final['출구'] = ""
                 
             final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
             
-            # ⭐️ [수정] 구역 및 게이트 번호 할당 로직 (게이트 번호가 비어있을 때 A/B 판단)
             def get_zone(row):
                 if row['g_num'] > 0:
                     return '서편' if 0 < row['g_num'] <= 250 else '동편'
@@ -408,7 +377,7 @@ else:
                     exit_val = str(row.get('출구', '')).strip().upper()
                     if exit_val == 'A': return '서편'
                     if exit_val == 'B': return '동편'
-                    return '동편' # A, B도 아닌 예외상황시 기본값
+                    return '동편'
 
             def get_gate_str(row):
                 if row['g_num'] > 0:
@@ -425,7 +394,6 @@ else:
             def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
             ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
 
-            # --- 결과 출력 ---
             st.components.v1.html(
                 """
                 <style>
@@ -480,7 +448,6 @@ else:
 
                     var oldTargetPaddingTop = target.style.paddingTop;
                     var oldTargetMarginTop = target.style.marginTop;
-                    
                     var oldTargetWidth = target.style.width;
                     var oldTargetMaxWidth = target.style.maxWidth;
 
@@ -496,7 +463,7 @@ else:
                     
                     setTimeout(function() {
                         win.html2canvas(target, { 
-                            scale: 6, // ⭐️ 화질 대폭 개선
+                            scale: 6, 
                             useCORS: true, 
                             backgroundColor: '#ffffff'
                         }).then(function(canvas) {
@@ -512,7 +479,6 @@ else:
                             
                             target.style.paddingTop = oldTargetPaddingTop;
                             target.style.marginTop = oldTargetMarginTop;
-                            
                             target.style.width = oldTargetWidth;
                             target.style.maxWidth = oldTargetMaxWidth;
 
@@ -525,10 +491,10 @@ else:
                 """, height=45
             )
 
-            # ⭐️ 총 승객수 배너 영역
+            # ⭐️ [수정] 총 승객수 배너 영역 (h3 태그를 div로 변경하여 🔗 앵커 숨김 및 여백 극한 축소)
             st.markdown(f"""
                 <div class="total-banner" style="position: relative;">
-                    <h3 style='margin:0; color:#1E3A8A;'>📊 총 승객수: {total_p:,}명</h3>
+                    <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
                     <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #1E3A8A; font-size: 16px;">{display_date_str}</div>
                 </div>
                 <div class="carrier-banner">
