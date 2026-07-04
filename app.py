@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
@@ -251,7 +251,10 @@ with st.sidebar:
         index=1
     )
     
-    today_date = datetime.now()
+    # ⭐️ 한국 시간(KST) 기준으로 설정되도록 수정된 부분
+    KST = timezone(timedelta(hours=9))
+    today_date = datetime.now(KST)
+    
     if date_option == "어제 (-1일)":
         target_date = today_date - timedelta(days=1)
     elif date_option == "내일 (+1일)":
