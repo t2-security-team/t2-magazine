@@ -240,6 +240,13 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
 
 # --- [사이드바 설정] ---
 with st.sidebar:
+    # ⭐️ [추가된 부분] 즐겨찾기 링크 바로가기 버튼
+    st.header("🔗 빠른 사이트 이동")
+    st.link_button("✈️ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
+    st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
+    
+    st.divider()
+    
     st.header("📂 데이터 업로드")
     pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
@@ -251,7 +258,7 @@ with st.sidebar:
         index=1
     )
     
-    # ⭐️ 한국 시간(KST) 기준으로 설정되도록 수정된 부분
+    # ⭐️ 한국 시간(KST) 기준 설정 유지
     KST = timezone(timedelta(hours=9))
     today_date = datetime.now(KST)
     
