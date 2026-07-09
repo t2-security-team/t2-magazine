@@ -58,10 +58,47 @@ def clean_flight_no(val):
         return f"{airline}{num:03d}"
     return val
 
-# ⭐️ [수정] 단일 시트 데이터 추출 로직 분리
-def extract_df_from_sheet(df_sheet):
-    if df_sheet is None or df_sheet.empty: return None
-    all_data = [df_sheet.columns.tolist()] + df_sheet.values.tolist()
+# ⭐️ [수정] 파일 읽기 강화 (다양한 인코딩 및 가짜 엑셀 HTML 표 인식 추가)
+def smart_read(file):
+    filename = file.name.lower()
+    df = None
+    
+    try:
+        if filename.endswith('.csv'):
+            # CSV 인코딩 순차 시도
+            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
+            for enc in encodings:
+                try:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding=enc)
+                    break
+                except:
+                    pass
+        elif filename.endswith('.xls'):
+            try:
+                file.seek(0)
+                df = pd.read_excel(file, engine='xlrd')
+            except:
+                # 무늬만 .xls인 HTML 형식 대비
+                try:
+                    file.seek(0)
+                    dfs = pd.read_html(file, encoding='utf-8')
+                    if dfs: df = dfs[0]
+                except:
+                    pass
+        else:
+            file.seek(0)
+            df = pd.read_excel(file, engine='openpyxl')
+    except:
+        try:
+            file.seek(0)
+            df = pd.read_excel(file)
+        except:
+            return None
+        
+    if df is None or df.empty: return None
+
+    all_data = [df.columns.tolist()] + df.values.tolist()
     header_idx = -1
     
     for i, row in enumerate(all_data[:20]):
@@ -73,68 +110,11 @@ def extract_df_from_sheet(df_sheet):
     if header_idx > 0:
         new_header = all_data[header_idx]
         new_data = all_data[header_idx+1:]
-        df_sheet = pd.DataFrame(new_data, columns=new_header)
+        df = pd.DataFrame(new_data, columns=new_header)
         
-    df_sheet.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df_sheet.columns)]
-    return df_sheet
-
-# ⭐️ [수정] 여러 시트를 읽어 하나로 합치도록 강화
-def smart_read(file):
-    filename = file.name.lower()
-    final_df_list = []
+    df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     
-    try:
-        if filename.endswith('.csv'):
-            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
-            for enc in encodings:
-                try:
-                    file.seek(0)
-                    df = pd.read_csv(file, encoding=enc)
-                    processed_df = extract_df_from_sheet(df)
-                    if processed_df is not None: final_df_list.append(processed_df)
-                    break
-                except:
-                    pass
-        elif filename.endswith('.xls'):
-            try:
-                file.seek(0)
-                # 시트 전체 읽기 (sheet_name=None)
-                xls_dict = pd.read_excel(file, engine='xlrd', sheet_name=None)
-                for sheet_name, df in xls_dict.items():
-                    processed_df = extract_df_from_sheet(df)
-                    if processed_df is not None: final_df_list.append(processed_df)
-            except:
-                try:
-                    file.seek(0)
-                    dfs = pd.read_html(file, encoding='utf-8')
-                    if dfs:
-                        for df in dfs:
-                            processed_df = extract_df_from_sheet(df)
-                            if processed_df is not None: final_df_list.append(processed_df)
-                except:
-                    pass
-        else: # .xlsx 등
-            file.seek(0)
-            # 시트 전체 읽기 (sheet_name=None)
-            xlsx_dict = pd.read_excel(file, engine='openpyxl', sheet_name=None)
-            for sheet_name, df in xlsx_dict.items():
-                processed_df = extract_df_from_sheet(df)
-                if processed_df is not None: final_df_list.append(processed_df)
-    except:
-        try:
-            file.seek(0)
-            dict_fallback = pd.read_excel(file, sheet_name=None)
-            for sheet_name, df in dict_fallback.items():
-                processed_df = extract_df_from_sheet(df)
-                if processed_df is not None: final_df_list.append(processed_df)
-        except:
-            return None
-            
-    if not final_df_list: return None
-    
-    # ⭐️ 여러 시트에서 나온 표들을 위아래로 이어 붙임
-    combined_df = pd.concat(final_df_list, ignore_index=True)
-    return combined_df
+    return df
 
 def parse_dl_pax(df):
     if df is None or df.empty: return None
@@ -366,6 +346,7 @@ else:
                 p_all.append(dl_df)
             else:
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+                # ⭐️ [수정] 대한항공의 TTL, TOTAL 을 인식하도록 키워드 추가
                 p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
                 if f_c and p_c:
