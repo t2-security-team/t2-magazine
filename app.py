@@ -58,47 +58,10 @@ def clean_flight_no(val):
         return f"{airline}{num:03d}"
     return val
 
-# ⭐️ [수정] 파일 읽기 강화 (다양한 인코딩 및 가짜 엑셀 HTML 표 인식 추가)
-def smart_read(file):
-    filename = file.name.lower()
-    df = None
-    
-    try:
-        if filename.endswith('.csv'):
-            # CSV 인코딩 순차 시도
-            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
-            for enc in encodings:
-                try:
-                    file.seek(0)
-                    df = pd.read_csv(file, encoding=enc)
-                    break
-                except:
-                    pass
-        elif filename.endswith('.xls'):
-            try:
-                file.seek(0)
-                df = pd.read_excel(file, engine='xlrd')
-            except:
-                # 무늬만 .xls인 HTML 형식 대비
-                try:
-                    file.seek(0)
-                    dfs = pd.read_html(file, encoding='utf-8')
-                    if dfs: df = dfs[0]
-                except:
-                    pass
-        else:
-            file.seek(0)
-            df = pd.read_excel(file, engine='openpyxl')
-    except:
-        try:
-            file.seek(0)
-            df = pd.read_excel(file)
-        except:
-            return None
-        
-    if df is None or df.empty: return None
-
-    all_data = [df.columns.tolist()] + df.values.tolist()
+# ⭐️ [수정] 단일 시트 데이터 추출 로직 분리
+def extract_df_from_sheet(df_sheet):
+    if df_sheet is None or df_sheet.empty: return None
+    all_data = [df_sheet.columns.tolist()] + df_sheet.values.tolist()
     header_idx = -1
     
     for i, row in enumerate(all_data[:20]):
@@ -110,11 +73,68 @@ def smart_read(file):
     if header_idx > 0:
         new_header = all_data[header_idx]
         new_data = all_data[header_idx+1:]
-        df = pd.DataFrame(new_data, columns=new_header)
+        df_sheet = pd.DataFrame(new_data, columns=new_header)
         
-    df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
+    df_sheet.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df_sheet.columns)]
+    return df_sheet
+
+# ⭐️ [수정] 여러 시트를 읽어 하나로 합치도록 강화
+def smart_read(file):
+    filename = file.name.lower()
+    final_df_list = []
     
-    return df
+    try:
+        if filename.endswith('.csv'):
+            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
+            for enc in encodings:
+                try:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding=enc)
+                    processed_df = extract_df_from_sheet(df)
+                    if processed_df is not None: final_df_list.append(processed_df)
+                    break
+                except:
+                    pass
+        elif filename.endswith('.xls'):
+            try:
+                file.seek(0)
+                # 시트 전체 읽기 (sheet_name=None)
+                xls_dict = pd.read_excel(file, engine='xlrd', sheet_name=None)
+                for sheet_name, df in xls_dict.items():
+                    processed_df = extract_df_from_sheet(df)
+                    if processed_df is not None: final_df_list.append(processed_df)
+            except:
+                try:
+                    file.seek(0)
+                    dfs = pd.read_html(file, encoding='utf-8')
+                    if dfs:
+                        for df in dfs:
+                            processed_df = extract_df_from_sheet(df)
+                            if processed_df is not None: final_df_list.append(processed_df)
+                except:
+                    pass
+        else: # .xlsx 등
+            file.seek(0)
+            # 시트 전체 읽기 (sheet_name=None)
+            xlsx_dict = pd.read_excel(file, engine='openpyxl', sheet_name=None)
+            for sheet_name, df in xlsx_dict.items():
+                processed_df = extract_df_from_sheet(df)
+                if processed_df is not None: final_df_list.append(processed_df)
+    except:
+        try:
+            file.seek(0)
+            dict_fallback = pd.read_excel(file, sheet_name=None)
+            for sheet_name, df in dict_fallback.items():
+                processed_df = extract_df_from_sheet(df)
+                if processed_df is not None: final_df_list.append(processed_df)
+        except:
+            return None
+            
+    if not final_df_list: return None
+    
+    # ⭐️ 여러 시트에서 나온 표들을 위아래로 이어 붙임
+    combined_df = pd.concat(final_df_list, ignore_index=True)
+    return combined_df
 
 def parse_dl_pax(df):
     if df is None or df.empty: return None
@@ -346,7 +366,6 @@ else:
                 p_all.append(dl_df)
             else:
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
-                # ⭐️ [수정] 대한항공의 TTL, TOTAL 을 인식하도록 키워드 추가
                 p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
                 if f_c and p_c:
@@ -456,99 +475,3 @@ else:
                     try {
                         var win = window.parent;
                         var doc = win.document;
-                        
-                        if (!win.html2canvas) {
-                            var script = doc.createElement('script');
-                            script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-                            script.onload = function() { doCap(win, doc, btn); };
-                            script.onerror = function() { 
-                                alert("⚠️ 라이브러리를 불러올 수 없습니다."); 
-                                btn.innerText = "📸 전체 사진으로 저장"; 
-                            };
-                            doc.head.appendChild(script);
-                        } else {
-                            doCap(win, doc, btn);
-                        }
-                    } catch(e) {
-                        alert("⚠️ 브라우저 보안 설정으로 인해 캡처가 차단되었습니다.");
-                        btn.innerText = "📸 전체 사진으로 저장";
-                    }
-                }
-                
-                function doCap(win, doc, btn) {
-                    var target = doc.querySelector('.block-container') || doc.querySelector('.main');
-                    var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe');
-                    
-                    var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
-                    var mainView = doc.querySelector('.main');
-                    
-                    var oldAppOverflow = appView ? appView.style.overflow : '';
-                    var oldAppHeight = appView ? appView.style.height : '';
-                    var oldMainOverflow = mainView ? mainView.style.overflow : '';
-                    var oldMainHeight = mainView ? mainView.style.height : '';
-
-                    var oldTargetPaddingTop = target.style.paddingTop;
-                    var oldTargetMarginTop = target.style.marginTop;
-                    var oldTargetWidth = target.style.width;
-                    var oldTargetMaxWidth = target.style.maxWidth;
-
-                    if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
-                    if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
-
-                    target.style.paddingTop = '10px';
-                    target.style.marginTop = '0px';
-                    target.style.width = '1100px'; 
-                    target.style.maxWidth = '1100px';
-
-                    hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
-                    
-                    setTimeout(function() {
-                        win.html2canvas(target, { 
-                            scale: 6, 
-                            useCORS: true, 
-                            backgroundColor: '#ffffff'
-                        }).then(function(canvas) {
-                            var link = doc.createElement('a');
-                            link.download = '보안검색_잡지_전체.png';
-                            link.href = canvas.toDataURL('image/png');
-                            link.click();
-                        }).catch(function(err) {
-                            alert("사진 생성 중 오류가 발생했습니다.");
-                        }).finally(function() {
-                            if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
-                            if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
-                            
-                            target.style.paddingTop = oldTargetPaddingTop;
-                            target.style.marginTop = oldTargetMarginTop;
-                            target.style.width = oldTargetWidth;
-                            target.style.maxWidth = oldTargetMaxWidth;
-
-                            hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
-                            btn.innerText = "📸 전체 사진으로 저장";
-                        });
-                    }, 800);
-                }
-                </script>
-                """, height=45
-            )
-
-            st.markdown(f"""
-                <div class="total-banner" style="position: relative;">
-                    <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
-                    <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #1E3A8A; font-size: 16px;">{display_date_str}</div>
-                </div>
-                <div class="carrier-banner">
-                    <span class="carrier-item">KE: <span style="color:#1E3A8A;">{ke_s:,}</span>명</span>
-                    <span class="carrier-item">OZ: <span style="color:#1E3A8A;">{oz_s:,}</span>명</span>
-                    <span class="carrier-item">DL: <span style="color:#1E3A8A;">{dl_s:,}</span>명</span>
-                </div>
-                <hr style="margin: 2px 0 10px 0; border: 0; border-top: 1px solid #e5e7eb;">
-            """, unsafe_allow_html=True)
-            
-            west_p = final[final['구역'] == '서편']['p_val'].sum()
-            east_p = final[final['구역'] == '동편']['p_val'].sum()
-            
-            w_html = generate_table_html(final[final['구역'] == '서편'], "⬅️ 서편", west_p, "#DC2626", opt_airline, opt_peak, base_font_size)
-            e_html = generate_table_html(final[final['구역'] == '동편'], "➡️ 동편", east_p, "#2563EB", opt_airline, opt_peak, base_font_size)
-            
-            st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
