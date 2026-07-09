@@ -58,19 +58,43 @@ def clean_flight_no(val):
         return f"{airline}{num:03d}"
     return val
 
+# ⭐️ [수정] 파일 읽기 강화 (다양한 인코딩 및 가짜 엑셀 HTML 표 인식 추가)
 def smart_read(file):
+    filename = file.name.lower()
+    df = None
+    
     try:
-        filename = file.name.lower()
         if filename.endswith('.csv'):
-            try: df = pd.read_csv(file, encoding='utf-8')
-            except: df = pd.read_csv(file, encoding='cp949')
+            # CSV 인코딩 순차 시도
+            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
+            for enc in encodings:
+                try:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding=enc)
+                    break
+                except:
+                    pass
         elif filename.endswith('.xls'):
-            df = pd.read_excel(file, engine='xlrd')
+            try:
+                file.seek(0)
+                df = pd.read_excel(file, engine='xlrd')
+            except:
+                # 무늬만 .xls인 HTML 형식 대비
+                try:
+                    file.seek(0)
+                    dfs = pd.read_html(file, encoding='utf-8')
+                    if dfs: df = dfs[0]
+                except:
+                    pass
         else:
+            file.seek(0)
             df = pd.read_excel(file, engine='openpyxl')
     except:
-        try: df = pd.read_excel(file)
-        except: return None
+        try:
+            file.seek(0)
+            df = pd.read_excel(file)
+        except:
+            return None
         
     if df is None or df.empty: return None
 
@@ -229,7 +253,6 @@ with st.sidebar:
     st.header("📂 데이터 업로드")
     pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
-    # 🔺 델타항공 사진 수령 시 직접 입력 칸 (추가 입력란 삭제 버전)
     with st.expander("🔺 델타항공 수동 입력 (사진 수령 시)", expanded=False):
         st.markdown("<p style='font-size:12px; color:#555; margin-bottom:8px;'>사진에 표기된 <b>환승객수</b>를 편명에 맞게 입력하세요.</p>", unsafe_allow_html=True)
         dl_fixed_flights = ["DL027", "DL189", "DL173", "DL159", "DL197", "DL171"]
@@ -323,7 +346,8 @@ else:
                 p_all.append(dl_df)
             else:
                 f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
-                p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S'])
+                # ⭐️ [수정] 대한항공의 TTL, TOTAL 을 인식하도록 키워드 추가
+                p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
                 r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
                 if f_c and p_c:
                     tmp = df[[f_c, p_c]].copy()
@@ -508,7 +532,6 @@ else:
                 """, height=45
             )
 
-            # ⭐️ [수정] 총 승객수 배너 영역 (h3 태그를 div로 변경하여 🔗 앵커 숨김 및 여백 극한 축소)
             st.markdown(f"""
                 <div class="total-banner" style="position: relative;">
                     <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
