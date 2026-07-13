@@ -11,6 +11,9 @@ st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
 # ⭐ [구글 시트 연동 설정]
 SHEET_NAME = "보안검색_데이터_공유" # 만드신 구글 시트 이름
 
+# ⭐ [속도 개선] 인증 클라이언트와 스프레드시트 연결을 캐싱해서, 앱이 켜져있는 동안
+# 구글 드라이브에서 이름으로 시트를 매번 새로 찾는 무거운 API 호출을 하지 않도록 함
+@st.cache_resource(show_spinner=False)
 def get_gspread_client():
     creds_dict = dict(st.secrets["gcp"])
     scopes = [
@@ -20,70 +23,89 @@ def get_gspread_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-def save_to_sheet(df, sheet_name):
+@st.cache_resource(show_spinner=False)
+def get_spreadsheet():
     client = get_gspread_client()
+    return client.open(SHEET_NAME)
+
+def save_to_sheet(df, sheet_name):
     try:
-        sheet = client.open(SHEET_NAME).worksheet(sheet_name)
-    except gspread.exceptions.WorksheetNotFound:
-        sheet = client.open(SHEET_NAME).add_worksheet(title=sheet_name, rows="1000", cols="20")
-    sheet.clear()
-    data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
-    try:
-        sheet.update(data_to_save)
-    except:
+        spreadsheet = get_spreadsheet()
+        try:
+            sheet = spreadsheet.worksheet(sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+        sheet.clear()
+        data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
         sheet.update(range_name="A1", values=data_to_save)
+        return True
+    except Exception as e:
+        st.sidebar.error(f"⚠ 데이터 저장 실패: {e}")
+        return False
 
 # [추가] 업로드된 파일 이름 목록을 보관하는 함수
 def append_file_names(new_names):
     if not new_names: return
-    client = get_gspread_client()
     try:
-        sheet = client.open(SHEET_NAME).worksheet("file_list")
-    except gspread.exceptions.WorksheetNotFound:
-        sheet = client.open(SHEET_NAME).add_worksheet(title="file_list", rows="100", cols="1")
-    
-    existing = sheet.get_all_values()
-    existing_list = [row[0] for row in existing[1:]] if len(existing) > 1 else []
-    
-    combined = list(set(existing_list + new_names))
-    sheet.clear()
-    df = pd.DataFrame(combined, columns=["파일명"])
-    data_to_save = [df.columns.values.tolist()] + df.values.tolist()
-    try:
-        sheet.update(data_to_save)
-    except:
+        spreadsheet = get_spreadsheet()
+        try:
+            sheet = spreadsheet.worksheet("file_list")
+        except gspread.exceptions.WorksheetNotFound:
+            sheet = spreadsheet.add_worksheet(title="file_list", rows="100", cols="1")
+
+        existing = sheet.get_all_values()
+        existing_list = [row[0] for row in existing[1:]] if len(existing) > 1 else []
+
+        combined = list(set(existing_list + new_names))
+        sheet.clear()
+        df = pd.DataFrame(combined, columns=["파일명"])
+        data_to_save = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(range_name="A1", values=data_to_save)
+    except Exception as e:
+        st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
 
 # [추가] 파일 이름 목록을 불러오는 함수
 def load_file_names():
-    client = get_gspread_client()
     try:
-        sheet = client.open(SHEET_NAME).worksheet("file_list")
+        spreadsheet = get_spreadsheet()
+        sheet = spreadsheet.worksheet("file_list")
         data = sheet.get_all_values()
         if len(data) > 1:
-            return [row[0] for row in data[1:]]
+            return [row[0] for row in data[1:] if row and row[0].strip() != ""]
     except gspread.exceptions.WorksheetNotFound:
         pass
+    except Exception as e:
+        st.sidebar.error(f"⚠ 파일 목록 불러오기 실패: {e}")
     return []
 
 def load_from_sheet(sheet_name):
-    client = get_gspread_client()
     try:
-        sheet = client.open(SHEET_NAME).worksheet(sheet_name)
+        spreadsheet = get_spreadsheet()
+        sheet = spreadsheet.worksheet(sheet_name)
         data = sheet.get_all_values()
         if len(data) > 1:
             return pd.DataFrame(data[1:], columns=data[0])
     except gspread.exceptions.WorksheetNotFound:
         pass
+    except Exception as e:
+        st.sidebar.error(f"⚠ 데이터 불러오기 실패: {e}")
     return pd.DataFrame()
 
 def clear_sheet(sheet_name):
-    client = get_gspread_client()
     try:
-        sheet = client.open(SHEET_NAME).worksheet(sheet_name)
+        spreadsheet = get_spreadsheet()
+        sheet = spreadsheet.worksheet(sheet_name)
         sheet.clear()
     except gspread.exceptions.WorksheetNotFound:
         pass
+    except Exception as e:
+        st.sidebar.error(f"⚠ 데이터 비우기 실패: {e}")
+
+# --- [업로드 완료 알림창 (토스트)] ---
+# rerun 직후 화면 상단에서 알림을 띄우기 위해 session_state에 메시지를 저장해두었다가 표시
+if "toast_msg" in st.session_state:
+    st.toast(st.session_state["toast_msg"], icon="✅")
+    del st.session_state["toast_msg"]
 
 # --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
@@ -315,30 +337,39 @@ with st.sidebar:
     uploaded_pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True, key="pax_uploader")
     
     if uploaded_pax_files:
-        p_temp = []
-        new_file_names = []
-        for f in uploaded_pax_files:
-            df = smart_read(f)
-            if df is not None:
-                dl_df = parse_dl_pax(df)
-                if dl_df is not None:
-                    p_temp.append(dl_df)
-                    new_file_names.append(f.name)
-                else:
-                    f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
-                    p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
-                    r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
-                    if f_c and p_c:
-                        tmp = df[[f_c, p_c]].copy()
-                        if r_c: tmp['출발지'] = df[r_c].astype(str) # 원본 텍스트 그대로 저장
-                        tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
-                        tmp['편명'] = tmp['편명'].apply(clean_flight_no)
-                        p_temp.append(tmp)
+        with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
+            p_temp = []
+            new_file_names = []
+            for f in uploaded_pax_files:
+                df = smart_read(f)
+                if df is not None:
+                    dl_df = parse_dl_pax(df)
+                    if dl_df is not None:
+                        p_temp.append(dl_df)
                         new_file_names.append(f.name)
-        if p_temp:
-            combined_df = pd.concat(p_temp).drop_duplicates('편명')
-            save_to_sheet(combined_df, "pax_data")
-            append_file_names(new_file_names) # ⭐ 업로드한 파일 이름도 시트에 별도 보관
+                    else:
+                        f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+                        p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
+                        r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+                        if f_c and p_c:
+                            tmp = df[[f_c, p_c]].copy()
+                            if r_c: tmp['출발지'] = df[r_c].astype(str) # 원본 텍스트 그대로 저장
+                            tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
+                            tmp['편명'] = tmp['편명'].apply(clean_flight_no)
+                            p_temp.append(tmp)
+                            new_file_names.append(f.name)
+            upload_ok = False
+            if p_temp:
+                combined_df = pd.concat(p_temp).drop_duplicates('편명')
+                upload_ok = save_to_sheet(combined_df, "pax_data")
+                if upload_ok:
+                    append_file_names(new_file_names) # ⭐ 업로드한 파일 이름도 시트에 별도 보관
+
+        # ⭐ 다음 새로고침 때 알림창(토스트)을 띄우기 위해 메시지 저장
+        if upload_ok:
+            st.session_state["toast_msg"] = f"{len(new_file_names)}개 파일 업로드 완료!"
+        elif not p_temp:
+            st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
         st.rerun()
 
     # 구글 시트에 데이터 및 파일 목록이 있는지 확인
@@ -359,6 +390,7 @@ with st.sidebar:
         if st.button("🗑 전체 데이터 비우기", use_container_width=True):
             clear_sheet("pax_data")
             clear_sheet("file_list") # ⭐ 비울 때 파일 목록도 같이 비우기
+            st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
