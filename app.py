@@ -48,7 +48,11 @@ def append_file_names(new_names):
     combined = list(set(existing_list + new_names))
     sheet.clear()
     df = pd.DataFrame(combined, columns=["파일명"])
-    sheet.update([df.columns.values.tolist()] + df.values.tolist())
+    data_to_save = [df.columns.values.tolist()] + df.values.tolist()
+    try:
+        sheet.update(data_to_save)
+    except:
+        sheet.update(range_name="A1", values=data_to_save)
 
 # [추가] 파일 이름 목록을 불러오는 함수
 def load_file_names():
@@ -357,14 +361,6 @@ with st.sidebar:
             clear_sheet("file_list") # ⭐ 비울 때 파일 목록도 같이 비우기
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-        
-    with st.expander("🔺 델타항공 수동 입력 (사진 수령 시)", expanded=False):
-        st.markdown("<p style='font-size:12px; color:#555; margin-bottom:8px;'>사진에 표기된 <b>환승객수</b>를 편명에 맞게 입력하세요.</p>", unsafe_allow_html=True)
-        dl_fixed_flights = ["DL027", "DL189", "DL173", "DL159", "DL197", "DL171"]
-        manual_dl_data = []
-        for flt in dl_fixed_flights:
-            pax_input = st.number_input(f"✈ {flt}", min_value=0, value=0, step=1, key=f"man_{flt}")
-            if pax_input > 0: manual_dl_data.append({'편명': flt, '승객수': pax_input})
 
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
@@ -399,9 +395,6 @@ st.markdown(f"""
 
 # --- [메인 로직] ---
 p_all, g_all = [], []
-
-if manual_dl_data:
-    p_all.append(pd.DataFrame(manual_dl_data))
 
 # 구글 시트에 저장된 데이터를 불러옵니다.
 if not saved_pax_df.empty:
