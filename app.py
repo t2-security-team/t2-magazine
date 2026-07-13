@@ -33,6 +33,35 @@ def save_to_sheet(df, sheet_name):
     except:
         sheet.update(range_name="A1", values=data_to_save)
 
+# [추가] 업로드된 파일 이름 목록을 보관하는 함수
+def append_file_names(new_names):
+    if not new_names: return
+    client = get_gspread_client()
+    try:
+        sheet = client.open(SHEET_NAME).worksheet("file_list")
+    except gspread.exceptions.WorksheetNotFound:
+        sheet = client.open(SHEET_NAME).add_worksheet(title="file_list", rows="100", cols="1")
+    
+    existing = sheet.get_all_values()
+    existing_list = [row[0] for row in existing[1:]] if len(existing) > 1 else []
+    
+    combined = list(set(existing_list + new_names))
+    sheet.clear()
+    df = pd.DataFrame(combined, columns=["파일명"])
+    sheet.update([df.columns.values.tolist()] + df.values.tolist())
+
+# [추가] 파일 이름 목록을 불러오는 함수
+def load_file_names():
+    client = get_gspread_client()
+    try:
+        sheet = client.open(SHEET_NAME).worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            return [row[0] for row in data[1:]]
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+    return []
+
 def load_from_sheet(sheet_name):
     client = get_gspread_client()
     try:
@@ -52,7 +81,7 @@ def clear_sheet(sheet_name):
     except gspread.exceptions.WorksheetNotFound:
         pass
 
-# --- [디자인 및 PDF 압축 CSS (기본 고정 스타일)] ---
+# --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
@@ -60,7 +89,10 @@ st.markdown("""
     .element-container { margin-bottom: 0px !important; }
     iframe { margin-bottom: 0px !important; min-height: 45px !important; }
     
-    .file-box { background-color:#f0f7ff; padding:10px; border-radius:5px; margin-bottom:15px; border: 1px solid #3b82f6; }
+    /* ⭐️ [수정] 파일 목록 박스 짤림 방지 및 여백 강화 */
+    .file-box { background-color:#f0f7ff; padding:15px; border-radius:5px; margin-bottom:15px; border: 1px solid #3b82f6; display: block; overflow: visible; }
+    .file-item { font-size:13px; margin: 0 0 6px 10px !important; line-height: 1.5 !important; color: #1f2937; font-weight: normal; word-break: break-all; }
+    .file-box-title { font-size:14px; font-weight:bold; color:#1E3A8A; margin: 0 0 10px 0 !important; line-height: 1.4 !important; }
     
     .merged-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
     .merged-table tr { border: none !important; } 
@@ -280,12 +312,14 @@ with st.sidebar:
     
     if uploaded_pax_files:
         p_temp = []
+        new_file_names = []
         for f in uploaded_pax_files:
             df = smart_read(f)
             if df is not None:
                 dl_df = parse_dl_pax(df)
                 if dl_df is not None:
                     p_temp.append(dl_df)
+                    new_file_names.append(f.name)
                 else:
                     f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
                     p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
@@ -296,18 +330,31 @@ with st.sidebar:
                         tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                         tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                         p_temp.append(tmp)
+                        new_file_names.append(f.name)
         if p_temp:
             combined_df = pd.concat(p_temp).drop_duplicates('편명')
             save_to_sheet(combined_df, "pax_data")
+            append_file_names(new_file_names) # ⭐️ 업로드한 파일 이름도 시트에 별도 보관
         st.rerun()
 
-    # 구글 시트에 데이터가 있는지 확인하고 상태 표시
+    # 구글 시트에 데이터 및 파일 목록이 있는지 확인
     saved_pax_df = load_from_sheet("pax_data")
+    saved_files = load_file_names()
+    
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size:13px; font-weight:bold; color:#1E3A8A; margin-bottom:8px;'>✅ 현재 공유중인 승객 데이터 적용됨</p>", unsafe_allow_html=True)
+        st.markdown("<p class='file-box-title'>✅ 현재 공유중인 승객 데이터</p>", unsafe_allow_html=True)
+        
+        # ⭐️ 보관된 파일 목록 출력
+        if saved_files:
+            for fname in saved_files:
+                st.markdown(f"<p class='file-item'>• {fname}</p>", unsafe_allow_html=True)
+        else:
+            st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
+            
         if st.button("🗑️ 전체 데이터 비우기", use_container_width=True):
             clear_sheet("pax_data")
+            clear_sheet("file_list") # ⭐️ 비울 때 파일 목록도 같이 비우기
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
         
