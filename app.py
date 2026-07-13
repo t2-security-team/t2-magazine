@@ -357,14 +357,6 @@ with st.sidebar:
             clear_sheet("file_list") # ⭐ 비울 때 파일 목록도 같이 비우기
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-        
-    with st.expander("🔺 델타항공 수동 입력 (사진 수령 시)", expanded=False):
-        st.markdown("<p style='font-size:12px; color:#555; margin-bottom:8px;'>사진에 표기된 <b>환승객수</b>를 편명에 맞게 입력하세요.</p>", unsafe_allow_html=True)
-        dl_fixed_flights = ["DL027", "DL189", "DL173", "DL159", "DL197", "DL171"]
-        manual_dl_data = []
-        for flt in dl_fixed_flights:
-            pax_input = st.number_input(f"✈ {flt}", min_value=0, value=0, step=1, key=f"man_{flt}")
-            if pax_input > 0: manual_dl_data.append({'편명': flt, '승객수': pax_input})
 
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
