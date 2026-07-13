@@ -36,36 +36,34 @@ def save_to_sheet(df, sheet_name):
 # [추가] 업로드된 파일 이름 목록을 보관하는 함수
 def append_file_names(new_names):
     if not new_names: return
+    client = get_gspread_client()
     try:
-        client = get_gspread_client()
-        try:
-            sheet = client.open(SHEET_NAME).worksheet("file_list")
-        except gspread.exceptions.WorksheetNotFound:
-            sheet = client.open(SHEET_NAME).add_worksheet(title="file_list", rows="100", cols="1")
-
-        existing = sheet.get_all_values()
-        existing_list = [row[0] for row in existing[1:]] if len(existing) > 1 else []
-
-        combined = list(set(existing_list + new_names))
-        sheet.clear()
-        df = pd.DataFrame(combined, columns=["파일명"])
-        data_to_save = [df.columns.values.tolist()] + df.values.tolist()
+        sheet = client.open(SHEET_NAME).worksheet("file_list")
+    except gspread.exceptions.WorksheetNotFound:
+        sheet = client.open(SHEET_NAME).add_worksheet(title="file_list", rows="100", cols="1")
+    
+    existing = sheet.get_all_values()
+    existing_list = [row[0] for row in existing[1:]] if len(existing) > 1 else []
+    
+    combined = list(set(existing_list + new_names))
+    sheet.clear()
+    df = pd.DataFrame(combined, columns=["파일명"])
+    data_to_save = [df.columns.values.tolist()] + df.values.tolist()
+    try:
+        sheet.update(data_to_save)
+    except:
         sheet.update(range_name="A1", values=data_to_save)
-    except Exception as e:
-        st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
 
 # [추가] 파일 이름 목록을 불러오는 함수
 def load_file_names():
+    client = get_gspread_client()
     try:
-        client = get_gspread_client()
         sheet = client.open(SHEET_NAME).worksheet("file_list")
         data = sheet.get_all_values()
         if len(data) > 1:
-            return [row[0] for row in data[1:] if row and row[0].strip() != ""]
+            return [row[0] for row in data[1:]]
     except gspread.exceptions.WorksheetNotFound:
         pass
-    except Exception as e:
-        st.sidebar.error(f"⚠ 파일 목록 불러오기 실패: {e}")
     return []
 
 def load_from_sheet(sheet_name):
