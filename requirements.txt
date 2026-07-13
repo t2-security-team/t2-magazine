@@ -4,4 +4,4 @@ openpyxl
 xlrd
 lxml
 gspread
-oauth2client
+google-auth
