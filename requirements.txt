@@ -1,4 +1,7 @@
-streamlit==1.56.0
+streamlit
 pandas
 openpyxl
 xlrd
+lxml
+gspread
+oauth2client
