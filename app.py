@@ -28,16 +28,33 @@ def get_spreadsheet():
     client = get_gspread_client()
     return client.open(SHEET_NAME)
 
+# ⭐ [할당량 개선] 구글 API가 순간적으로 429(요청 한도 초과)를 반환하면
+# 즉시 에러를 띄우지 않고 잠깐 기다렸다가 자동으로 재시도
+import time
+def call_with_retry(func, *args, max_retries=3, **kwargs):
+    delay = 1.5
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            is_last = attempt == max_retries - 1
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429 and not is_last:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+
 def save_to_sheet(df, sheet_name):
     try:
         spreadsheet = get_spreadsheet()
         try:
-            sheet = spreadsheet.worksheet(sheet_name)
+            sheet = call_with_retry(spreadsheet.worksheet, sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
-        sheet.clear()
+            sheet = call_with_retry(spreadsheet.add_worksheet, title=sheet_name, rows="1000", cols="20")
+        call_with_retry(sheet.clear)
         data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
-        sheet.update(range_name="A1", values=data_to_save)
+        call_with_retry(sheet.update, range_name="A1", values=data_to_save)
         load_from_sheet.clear() # ⭐ 방금 쓴 내용을 다음 화면에서 바로 보이도록 캐시 무효화
         return True
     except Exception as e:
@@ -50,17 +67,17 @@ def append_file_names(new_names):
     try:
         spreadsheet = get_spreadsheet()
         try:
-            sheet = spreadsheet.worksheet("file_list")
+            sheet = call_with_retry(spreadsheet.worksheet, "file_list")
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title="file_list", rows="100", cols="1")
+            sheet = call_with_retry(spreadsheet.add_worksheet, title="file_list", rows="100", cols="1")
 
         existing_list = load_file_names()
 
         combined = list(set(existing_list + new_names))
-        sheet.clear()
+        call_with_retry(sheet.clear)
         df = pd.DataFrame(combined, columns=["파일명"])
         data_to_save = [df.columns.values.tolist()] + df.values.tolist()
-        sheet.update(range_name="A1", values=data_to_save)
+        call_with_retry(sheet.update, range_name="A1", values=data_to_save)
         load_file_names.clear() # ⭐ 방금 쓴 내용을 다음 화면에서 바로 보이도록 캐시 무효화
     except Exception as e:
         st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
@@ -68,12 +85,12 @@ def append_file_names(new_names):
 # [추가] 파일 이름 목록을 불러오는 함수
 # ⭐ [속도/할당량 개선] 20초 동안은 캐시된 값을 재사용해서, 슬라이더/라디오 조작만으로 구글시트 읽기 API가
 # 계속 호출되어 분당 요청 한도(429 Quota exceeded)에 걸리는 것을 방지
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=45, show_spinner=False)
 def load_file_names():
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet("file_list")
-        data = sheet.get_all_values()
+        sheet = call_with_retry(spreadsheet.worksheet, "file_list")
+        data = call_with_retry(sheet.get_all_values)
         if len(data) > 1:
             return [row[0] for row in data[1:] if row and row[0].strip() != ""]
     except gspread.exceptions.WorksheetNotFound:
@@ -82,12 +99,12 @@ def load_file_names():
         st.sidebar.error(f"⚠ 파일 목록 불러오기 실패: {e}")
     return []
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=45, show_spinner=False)
 def load_from_sheet(sheet_name):
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet(sheet_name)
-        data = sheet.get_all_values()
+        sheet = call_with_retry(spreadsheet.worksheet, sheet_name)
+        data = call_with_retry(sheet.get_all_values)
         if len(data) > 1:
             return pd.DataFrame(data[1:], columns=data[0])
     except gspread.exceptions.WorksheetNotFound:
@@ -99,8 +116,8 @@ def load_from_sheet(sheet_name):
 def clear_sheet(sheet_name):
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet(sheet_name)
-        sheet.clear()
+        sheet = call_with_retry(spreadsheet.worksheet, sheet_name)
+        call_with_retry(sheet.clear)
         load_from_sheet.clear() # ⭐ 비운 내용이 바로 반영되도록 캐시 무효화
         load_file_names.clear()
     except gspread.exceptions.WorksheetNotFound:
@@ -381,7 +398,7 @@ with st.sidebar:
 
     # 구글 시트에 데이터 및 파일 목록이 있는지 확인
     saved_pax_df = load_from_sheet("pax_data")
-    saved_files = load_file_names()
+    saved_files = load_file_names() if not saved_pax_df.empty else []
     
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
