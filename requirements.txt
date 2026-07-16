@@ -2,4 +2,4 @@ streamlit
 pandas
 openpyxl
 xlrd
-lxml
+lxml==6.1.1
