@@ -3,15 +3,15 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import io  # ⭐ [수정] 가짜 엑셀(HTML) 처리를 위해 필수
+import io 
 from datetime import datetime, timedelta, timezone
-
+     
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
-
+     
 # ⭐ [구글 시트 연동 설정]
 SHEET_NAME = "보안검색_데이터_공유" 
-
+     
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
     creds_dict = dict(st.secrets["gcp"])
@@ -21,12 +21,12 @@ def get_gspread_client():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
-
+     
 @st.cache_resource(show_spinner=False)
 def get_spreadsheet():
     client = get_gspread_client()
     return client.open(SHEET_NAME)
-
+     
 def save_to_sheet(df, sheet_name):
     try:
         spreadsheet = get_spreadsheet()
@@ -42,7 +42,7 @@ def save_to_sheet(df, sheet_name):
     except Exception as e:
         st.sidebar.error(f"⚠ 데이터 저장 실패: {e}")
         return False
-
+     
 def append_file_names(new_names):
     if not new_names: return
     try:
@@ -60,7 +60,7 @@ def append_file_names(new_names):
         load_file_names.clear() 
     except Exception as e:
         st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
-
+     
 @st.cache_data(ttl=20, show_spinner=False)
 def load_file_names():
     try:
@@ -74,7 +74,7 @@ def load_file_names():
     except Exception as e:
         st.sidebar.error(f"⚠ 파일 목록 불러오기 실패: {e}")
     return []
-
+     
 @st.cache_data(ttl=20, show_spinner=False)
 def load_from_sheet(sheet_name):
     try:
@@ -88,7 +88,7 @@ def load_from_sheet(sheet_name):
     except Exception as e:
         st.sidebar.error(f"⚠ 데이터 불러오기 실패: {e}")
     return pd.DataFrame()
-
+     
 def clear_sheet(sheet_name):
     try:
         spreadsheet = get_spreadsheet()
@@ -100,11 +100,11 @@ def clear_sheet(sheet_name):
         pass
     except Exception as e:
         st.sidebar.error(f"⚠ 데이터 비우기 실패: {e}")
-
+     
 if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon="✅")
     del st.session_state["toast_msg"]
-
+     
 # --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
     <style>
@@ -145,7 +145,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
+     
 # --- [도구함] ---
 def clean_flight_no(val):
     if pd.isna(val): return ""
@@ -153,8 +153,7 @@ def clean_flight_no(val):
     match = re.match(r'([A-Z]+)(\d+)', val)
     if match: return f"{match.group(1)}{int(match.group(2)):03d}"
     return val
-
-# ⭐ [수정] 파일 읽기 강화 및 가짜 엑셀 호환
+     
 def smart_read(file):
     filename = file.name.lower()
     df = None
@@ -209,7 +208,7 @@ def smart_read(file):
         
     df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     return df
-
+     
 def parse_dl_pax(df):
     if df is None or df.empty: return None
     all_rows = [df.columns.tolist()] + df.values.tolist()
@@ -242,7 +241,7 @@ def parse_dl_pax(df):
                     except: pass
         if dl_data: return pd.DataFrame(dl_data)
     return None
-
+     
 def find_col(df, keywords):
     if df is None or df.empty: return None
     for col in df.columns:
@@ -250,7 +249,7 @@ def find_col(df, keywords):
         for key in keywords:
             if key.upper() in clean_col: return col
     return None
-
+     
 def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
@@ -280,7 +279,7 @@ def format_route(val, option):
         else: return "나리타(NRT)"
         
     return val
-
+     
 def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_size):
     display_title = f"{title} ({count:,}명)"
     html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
@@ -326,21 +325,21 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             processed_hours.add(current_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
-
+     
 # --- [사이드바 설정] ---
 with st.sidebar:
     st.header("🔗 빠른 사이트 이동")
     st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
+    st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
     st.divider()
     
     st.header("📂 데이터 업로드")
     
-    # ⭐ [버튼 잠금 로직] 업로드 후 버튼을 눌러야만 저장되도록 수정
     uploaded_pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True, key="pax_uploader")
     
     if uploaded_pax_files:
-        if st.button("💾 구글 시트에 데이터 공유하기", use_container_width=True):
+        if st.button("💾 파일 저장", use_container_width=True):
             with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
@@ -374,7 +373,7 @@ with st.sidebar:
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
-
+     
     saved_pax_df = load_from_sheet("pax_data")
     saved_files = load_file_names()
     
@@ -394,7 +393,7 @@ with st.sidebar:
             st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-
+     
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
@@ -418,22 +417,22 @@ with st.sidebar:
     time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
     st.divider()
     base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
-
+     
 st.markdown(f"""
     <style>
     .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
     .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
     </style>
 """, unsafe_allow_html=True)
-
+     
 # --- [메인 로직] ---
 p_all, g_all = [], []
-
+     
 if not saved_pax_df.empty:
     if '출발지' in saved_pax_df.columns:
         saved_pax_df['출발지'] = saved_pax_df['출발지'].apply(lambda x: format_route(x, route_option))
     p_all.append(saved_pax_df)
-
+     
 for f in gate_files:
     df = smart_read(f)
     if df is not None:
@@ -460,13 +459,13 @@ for f in gate_files:
             if r_c: tmp['출발지'] = tmp['출발지'].apply(lambda x: format_route(x, route_option))
             tmp['편명'] = tmp['편명'].apply(clean_flight_no)
             g_all.append(tmp)
-
+     
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
     with st.expander("💡 홈페이지 이용 방법 (필독)", expanded=True):
         st.markdown("""
         ### 🌐 데이터 공유 방식 안내
-        * **자동 공유:** 1번째 파일(승객수 파일)을 업로드하고 **[구글 시트에 저장] 버튼을 누르면** 서버에 보관되어 모든 팀원이 동일한 데이터를 볼 수 있습니다.
+        * **자동 공유:** 1번째 파일(승객수 파일)을 업로드하고 **[파일 저장] 버튼을 누르면** 서버에 보관되어 모든 팀원이 동일한 데이터를 볼 수 있습니다.
         * **비우기 버튼:** 다음 날 데이터를 넣기 전, 사이드바의 **[🗑 전체 데이터 비우기]** 버튼을 누르면 서버 데이터가 초기화됩니다.
         """)
 else:
