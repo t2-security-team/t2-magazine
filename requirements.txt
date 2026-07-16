@@ -5,5 +5,3 @@ xlrd
 lxml
 gspread
 google-auth
-requests
-streamlit-autorefresh
