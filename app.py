@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import re
+import io  # 추가됨: HTML 형식 엑셀 파일을 읽기 위해 필요
 from datetime import datetime, timedelta, timezone
-
+  
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
-
+  
 # --- [디자인 및 PDF 압축 CSS (기본 고정 스타일)] ---
 st.markdown("""
     <style>
@@ -46,7 +47,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
+  
 # --- [도구함] ---
 def clean_flight_no(val):
     if pd.isna(val): return ""
@@ -57,7 +58,7 @@ def clean_flight_no(val):
         num = int(match.group(2))
         return f"{airline}{num:03d}"
     return val
-
+  
 # ⭐ [수정] 파일 읽기 강화 (다양한 인코딩 및 가짜 엑셀 HTML 표 인식 추가)
 def smart_read(file):
     filename = file.name.lower()
@@ -79,11 +80,19 @@ def smart_read(file):
                 file.seek(0)
                 df = pd.read_excel(file, engine='xlrd')
             except:
-                # 무늬만 .xls인 HTML 형식 대비
+                # 무늬만 .xls인 HTML 형식 대비 (수정됨: Streamlit 환경에 맞게 io.StringIO 및 다중 인코딩 적용)
                 try:
                     file.seek(0)
-                    dfs = pd.read_html(file, encoding='utf-8')
-                    if dfs: df = dfs[0]
+                    raw_data = file.read()
+                    for enc in ['cp949', 'euc-kr', 'utf-8']:
+                        try:
+                            html_str = raw_data.decode(enc)
+                            dfs = pd.read_html(io.StringIO(html_str))
+                            if dfs: 
+                                df = dfs[0]
+                                break
+                        except:
+                            pass
                 except:
                     pass
         else:
@@ -97,7 +106,7 @@ def smart_read(file):
             return None
         
     if df is None or df.empty: return None
-
+  
     all_data = [df.columns.tolist()] + df.values.tolist()
     header_idx = -1
     
@@ -115,7 +124,7 @@ def smart_read(file):
     df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     
     return df
-
+  
 def parse_dl_pax(df):
     if df is None or df.empty: return None
     
@@ -150,7 +159,7 @@ def parse_dl_pax(df):
         if dl_data:
             return pd.DataFrame(dl_data)
     return None
-
+  
 def find_col(df, keywords):
     if df is None or df.empty: return None
     for col in df.columns:
@@ -158,7 +167,7 @@ def find_col(df, keywords):
         for key in keywords:
             if key.upper() in clean_col: return col
     return None
-
+  
 def format_route(val, option):
     if pd.isna(val): return ""
     val = str(val).strip()
@@ -192,7 +201,7 @@ def format_route(val, option):
         else: return "나리타(NRT)"
         
     return val
-
+  
 def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_size):
     display_title = f"{title} ({count:,}명)"
     html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
@@ -228,10 +237,10 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             if current_h == 16: row_style_css = "background-color: #F4FAFD;" 
             elif current_h == 17: row_style_css = "background-color: #FFFDF0;" 
             elif current_h == 18: row_style_css = "background-color: #FFF5F8;" 
-
+  
         td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
         route_val = row.get("출발지", "")
-
+  
         html += f'<tr>'
         html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{route_val}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_display"]}</td>'
         
@@ -241,7 +250,7 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
             processed_hours.add(current_h)
         html += '</tr>'
     return html + '</tbody></table></div>'
-
+  
 # --- [사이드바 설정] ---
 with st.sidebar:
     st.header("🔗 빠른 사이트 이동")
@@ -262,7 +271,7 @@ with st.sidebar:
             pax_input = st.number_input(f"✈ {flt}", min_value=0, value=0, step=1, key=f"man_{flt}")
             if pax_input > 0:
                 manual_dl_data.append({'편명': flt, '승객수': pax_input})
-
+  
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
@@ -306,14 +315,14 @@ with st.sidebar:
     
     st.divider()
     base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
-
+  
 st.markdown(f"""
     <style>
     .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
     .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
     </style>
 """, unsafe_allow_html=True)
-
+  
 # --- [메인 로직] ---
 if not ((pax_files or manual_dl_data) and gate_files):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
@@ -324,11 +333,11 @@ if not ((pax_files or manual_dl_data) and gate_files):
         * **수동 입력 활성화 :** 델타항공 승객수가 사진으로 온 경우, 사이드바의 '🔺 델타항공 수동 입력' 상자를 열고 타이핑하세요.
         * **2번째 파일 업로드 (게이트 파일):** 인천공항 게이트 및 도착시간 데이터 업로드
         * **- 인천공항 도착편, T2, 날짜, 시간대(00:00~23:59) 설정 후 검색, 엑셀 다운로드**
-
+  
         ### 2. 파일 형식 안내
         * 본 시스템은 **.xls, .xlsx, .csv 형식을 모두 지원**합니다.
         * 번거롭게 변환할 필요 없이 다운로드 받은 원본 파일 그대로 업로드하셔도 정상적으로 작동합니다.
-
+  
         ### 3. 기타 안내사항
         * **이메일 자동접속을 못하는 이유 :** 봇으로 인식하여 네이버에서 차단/이메일을 자동으로 불러오려고 했으나 2차인증 해야하고 아이디 주인에게 계속 알람 발생.
         """)
@@ -355,7 +364,7 @@ else:
                     tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                     tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                     p_all.append(tmp)
-
+  
     for f in gate_files:
         df = smart_read(f)
         if df is not None:
@@ -382,7 +391,7 @@ else:
                 if r_c: tmp['출발지'] = tmp['출발지'].apply(lambda x: format_route(x, route_option))
                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                 g_all.append(tmp)
-
+  
     if p_all and g_all:
         df_p = pd.concat(p_all).drop_duplicates('편명')
         df_g = pd.concat(g_all).drop_duplicates('편명')
@@ -419,7 +428,7 @@ else:
                     if exit_val == 'A': return '서편'
                     if exit_val == 'B': return '동편'
                     return '동편'
-
+  
             def get_gate_str(row):
                 if row['g_num'] > 0:
                     return str(int(row['g_num']))
@@ -434,7 +443,7 @@ else:
             total_p = final['p_val'].sum()
             def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
             ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
-
+  
             st.components.v1.html(
                 """
                 <style>
@@ -486,20 +495,20 @@ else:
                     var oldAppHeight = appView ? appView.style.height : '';
                     var oldMainOverflow = mainView ? mainView.style.overflow : '';
                     var oldMainHeight = mainView ? mainView.style.height : '';
-
+  
                     var oldTargetPaddingTop = target.style.paddingTop;
                     var oldTargetMarginTop = target.style.marginTop;
                     var oldTargetWidth = target.style.width;
                     var oldTargetMaxWidth = target.style.maxWidth;
-
+  
                     if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                     if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
-
+  
                     target.style.paddingTop = '10px';
                     target.style.marginTop = '0px';
                     target.style.width = '1100px'; 
                     target.style.maxWidth = '1100px';
-
+  
                     hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                     
                     setTimeout(function() {
@@ -522,7 +531,7 @@ else:
                             target.style.marginTop = oldTargetMarginTop;
                             target.style.width = oldTargetWidth;
                             target.style.maxWidth = oldTargetMaxWidth;
-
+  
                             hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
                             btn.innerText = "📸 전체 사진으로 저장";
                         });
@@ -531,7 +540,7 @@ else:
                 </script>
                 """, height=45
             )
-
+  
             st.markdown(f"""
                 <div class="total-banner" style="position: relative;">
                     <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
