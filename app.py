@@ -336,9 +336,25 @@ with st.sidebar:
     
     st.header("📂 데이터 업로드")
     
-    uploaded_pax_files = st.file_uploader("1. 승객수 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True, key="pax_uploader")
+    # ⭐ 1. 저장된 파일 목록과 데이터를 먼저 불러와서 파일 수를 체크합니다.
+    saved_pax_df = load_from_sheet("pax_data")
+    saved_files = load_file_names()
     
-    if uploaded_pax_files:
+    # ⭐ 2. 파일이 3개 이상 등록되어 있으면 업로드 잠금 처리
+    is_upload_locked = len(saved_files) >= 3
+    
+    if is_upload_locked:
+        st.error("🚨 **업로드 제한됨**\n\n이미 3개의 승객 데이터가 등록되어 있습니다. 중복 오류 방지를 위해 아래의 **[🗑 전체 데이터 비우기]** 버튼을 먼저 눌러주세요.")
+    
+    # ⭐ 3. disabled 옵션을 적용하여 파일이 3개 이상이면 업로드 창을 회색으로 막음
+    uploaded_pax_files = st.file_uploader(
+        "1. 승객수 파일 (.xls, .xlsx, .csv)", 
+        accept_multiple_files=True, 
+        key="pax_uploader",
+        disabled=is_upload_locked
+    )
+    
+    if uploaded_pax_files and not is_upload_locked:
         if st.button("💾 파일 저장", use_container_width=True):
             with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
                 p_temp = []
@@ -374,9 +390,7 @@ with st.sidebar:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
      
-    saved_pax_df = load_from_sheet("pax_data")
-    saved_files = load_file_names()
-    
+    # ⭐ 4. 공유 중인 파일 상태 및 초기화(비우기) 버튼
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
         st.markdown("<p class='file-box-title'>✅ 현재 공유중인 승객 데이터</p>", unsafe_allow_html=True)
@@ -467,6 +481,7 @@ if not (p_all and g_all):
         ### 🌐 데이터 공유 방식 안내
         * **자동 공유:** 1번째 파일(승객수 파일)을 업로드하고 **[파일 저장] 버튼을 누르면** 서버에 보관되어 모든 팀원이 동일한 데이터를 볼 수 있습니다.
         * **비우기 버튼:** 다음 날 데이터를 넣기 전, 사이드바의 **[🗑 전체 데이터 비우기]** 버튼을 누르면 서버 데이터가 초기화됩니다.
+        * **중복 방지 제한:** 현재 서버에 3개의 승객수 파일이 등록되어 있는 경우 데이터 오류 방지를 위해 업로드가 제한됩니다. 반드시 [🗑 전체 데이터 비우기] 후 새 파일을 등록해 주세요.
         """)
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
