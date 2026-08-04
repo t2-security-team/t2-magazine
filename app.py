@@ -332,6 +332,8 @@ with st.sidebar:
     st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
     st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+    # ⭐ 새로 추가된 실시간 연동 버전 이동 버튼!
+    st.link_button("🔄 실시간 연동 버전으로 이동", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
     st.divider()
     
     st.header("📂 데이터 업로드")
