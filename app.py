@@ -339,9 +339,10 @@ with st.sidebar:
     
     st.header("📂 데이터 업로드")
     
-    # ⭐ 1. 시간 확인 및 업로드 타겟 기본값 설정 (17시 이후면 '내일' 기본)
+   # ⭐ 1. 시간 확인 및 업로드 타겟 기본값 설정 (17시 이후면 '내일' 기본)
     KST = timezone(timedelta(hours=9))
-    current_hour = datetime.now(KST).hour
+    today_date = datetime.now(KST)
+    current_hour = today_date.hour
     default_upload_idx = 1 if current_hour >= 17 else 0
     
     upload_target = st.radio("📅 업로드할 데이터 날짜", ["오늘", "내일"], index=default_upload_idx, horizontal=True)
