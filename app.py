@@ -339,13 +339,11 @@ with st.sidebar:
     
     st.header("📂 데이터 업로드")
     
-   # ⭐ 1. 시간 확인 및 업로드 타겟 기본값 설정 (17시 이후면 '내일' 기본)
+   # ⭐ 1. 날짜 설정 및 업로드 타겟 기본값 (항상 '내일'로 고정)
     KST = timezone(timedelta(hours=9))
     today_date = datetime.now(KST)
-    current_hour = today_date.hour
-    default_upload_idx = 1 if current_hour >= 17 else 0
     
-    upload_target = st.radio("📅 업로드할 데이터 날짜", ["오늘", "내일"], index=default_upload_idx, horizontal=True)
+    upload_target = st.radio("📅 업로드할 데이터 날짜", ["오늘", "내일"], index=1, horizontal=True)
     target_sheet = "pax_today" if upload_target == "오늘" else "pax_tomorrow"
     target_list_sheet = "file_list_today" if upload_target == "오늘" else "file_list_tomorrow"
     
