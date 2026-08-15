@@ -347,7 +347,7 @@ with st.sidebar:
     today_str = f"오늘 ({today_date.month}월 {today_date.day}일)"
     tomorrow_str = f"내일 ({tomorrow_date.month}월 {tomorrow_date.day}일)"
     
-    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_str, tomorrow_str], index=1, horizontal=True)
+    upload_target = st.radio("📅 업로드할 데이터 날짜 / 내일 파일이면 내일날짜로 선택", [today_str, tomorrow_str], index=1, horizontal=True)
     
     target_sheet = "pax_today" if "오늘" in upload_target else "pax_tomorrow"
     target_list_sheet = "file_list_today" if "오늘" in upload_target else "file_list_tomorrow"
