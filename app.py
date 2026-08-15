@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import io 
+import io
 from datetime import datetime, timedelta, timezone
      
 # 1. 페이지 설정
@@ -493,7 +493,6 @@ if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
     with st.expander("📢 8월 15일 시스템 업데이트 안내 (필독)", expanded=True):
         st.markdown("""
-        **항상 수고하십니다.**
         **1. '오늘 자 실시간 잡지' 유지 기능 추가**
         의견을 반영하여, 내일 자 승객 데이터를 미리 올리더라도 당일 자정(00시)까지는 오늘 자 잡지를 계속 조회할 수 있도록 시스템을 개선했습니다.
         
