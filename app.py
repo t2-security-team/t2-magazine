@@ -339,13 +339,18 @@ with st.sidebar:
     
     st.header("📂 데이터 업로드")
     
-   # ⭐ 1. 날짜 설정 및 업로드 타겟 기본값 (항상 '내일'로 고정)
+   # ⭐ 1. 날짜 설정 및 업로드 타겟 기본값 (항상 '내일'로 고정 + 날짜 표시)
     KST = timezone(timedelta(hours=9))
     today_date = datetime.now(KST)
+    tomorrow_date = today_date + timedelta(days=1)
     
-    upload_target = st.radio("📅 업로드할 데이터 날짜", ["오늘", "내일"], index=1, horizontal=True)
-    target_sheet = "pax_today" if upload_target == "오늘" else "pax_tomorrow"
-    target_list_sheet = "file_list_today" if upload_target == "오늘" else "file_list_tomorrow"
+    today_str = f"오늘 ({today_date.month}월 {today_date.day}일)"
+    tomorrow_str = f"내일 ({tomorrow_date.month}월 {tomorrow_date.day}일)"
+    
+    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_str, tomorrow_str], index=1, horizontal=True)
+    
+    target_sheet = "pax_today" if "오늘" in upload_target else "pax_tomorrow"
+    target_list_sheet = "file_list_today" if "오늘" in upload_target else "file_list_tomorrow"
     
     # ⭐ 2. 선택된 날짜에 맞는 파일 목록과 데이터 불러오기
     saved_pax_df = load_from_sheet(target_sheet)
