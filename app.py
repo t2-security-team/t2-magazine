@@ -43,15 +43,16 @@ def save_to_sheet(df, sheet_name):
         st.sidebar.error(f"⚠ 데이터 저장 실패: {e}")
         return False
      
-def append_file_names(new_names):
+# ⭐ 파일 목록도 시트 이름을 받도록 수정
+def append_file_names(new_names, sheet_name="file_list"):
     if not new_names: return
     try:
         spreadsheet = get_spreadsheet()
         try:
-            sheet = spreadsheet.worksheet("file_list")
+            sheet = spreadsheet.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title="file_list", rows="100", cols="1")
-        existing_list = load_file_names()
+            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="1")
+        existing_list = load_file_names(sheet_name)
         combined = list(set(existing_list + new_names))
         sheet.clear()
         df = pd.DataFrame(combined, columns=["파일명"])
@@ -61,11 +62,12 @@ def append_file_names(new_names):
     except Exception as e:
         st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
      
+# ⭐ 파일 목록 캐싱 시 시트 이름도 인자로 받아 개별 캐싱
 @st.cache_data(ttl=1800, show_spinner=False)
-def load_file_names():
+def load_file_names(sheet_name="file_list"):
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet("file_list")
+        sheet = spreadsheet.worksheet(sheet_name)
         data = sheet.get_all_values()
         if len(data) > 1:
             return [row[0] for row in data[1:] if row and row[0].strip() != ""]
@@ -332,23 +334,31 @@ with st.sidebar:
     st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
     st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
-    # ⭐ 새로 추가된 실시간 연동 버전 이동 버튼!
     st.link_button("🔄 실시간 연동 버전으로 이동", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
     st.divider()
     
     st.header("📂 데이터 업로드")
     
-    # ⭐ 1. 저장된 파일 목록과 데이터를 먼저 불러와서 파일 수를 체크합니다.
-    saved_pax_df = load_from_sheet("pax_data")
-    saved_files = load_file_names()
+    # ⭐ 1. 시간 확인 및 업로드 타겟 기본값 설정 (17시 이후면 '내일' 기본)
+    KST = timezone(timedelta(hours=9))
+    current_hour = datetime.now(KST).hour
+    default_upload_idx = 1 if current_hour >= 17 else 0
     
-    # ⭐ 2. 파일이 3개 이상 등록되어 있으면 업로드 잠금 처리
+    upload_target = st.radio("📅 업로드할 데이터 날짜", ["오늘", "내일"], index=default_upload_idx, horizontal=True)
+    target_sheet = "pax_today" if upload_target == "오늘" else "pax_tomorrow"
+    target_list_sheet = "file_list_today" if upload_target == "오늘" else "file_list_tomorrow"
+    
+    # ⭐ 2. 선택된 날짜에 맞는 파일 목록과 데이터 불러오기
+    saved_pax_df = load_from_sheet(target_sheet)
+    saved_files = load_file_names(target_list_sheet)
+    
+    # ⭐ 3. 해당 날짜 방에 3개 이상 등록되어 있으면 잠금
     is_upload_locked = len(saved_files) >= 3
     
     if is_upload_locked:
-        st.error("🚨 **업로드 제한됨**\n\n이미 3개의 승객 데이터가 등록되어 있습니다. 중복 오류 방지를 위해 아래의 **[🗑 전체 데이터 비우기]** 버튼을 먼저 눌러주세요.")
+        st.error(f"🚨 **업로드 제한됨**\n\n[{upload_target}] 데이터에 이미 3개의 파일이 등록되어 있습니다. 아래의 **[🗑 {upload_target} 데이터 비우기]** 버튼을 먼저 눌러주세요.")
     
-    # ⭐ 3. disabled 옵션을 적용하여 파일이 3개 이상이면 업로드 창을 회색으로 막음
+    # ⭐ 4. 업로드 기능
     uploaded_pax_files = st.file_uploader(
         "1. 승객수 파일 (.xls, .xlsx, .csv)", 
         accept_multiple_files=True, 
@@ -358,7 +368,7 @@ with st.sidebar:
     
     if uploaded_pax_files and not is_upload_locked:
         if st.button("💾 파일 저장", use_container_width=True):
-            with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
+            with st.spinner(f"📤 {upload_target} 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
                 for f in uploaded_pax_files:
@@ -382,20 +392,21 @@ with st.sidebar:
                 upload_ok = False
                 if p_temp:
                     combined_df = pd.concat(p_temp).drop_duplicates('편명')
-                    upload_ok = save_to_sheet(combined_df, "pax_data")
+                    # ⭐ 선택된 타겟 시트로 저장
+                    upload_ok = save_to_sheet(combined_df, target_sheet)
                     if upload_ok:
-                        append_file_names(new_file_names)
+                        append_file_names(new_file_names, target_list_sheet)
             
             if upload_ok:
-                st.session_state["toast_msg"] = f"{len(new_file_names)}개 파일 업로드 완료!"
+                st.session_state["toast_msg"] = f"{upload_target} 데이터({len(new_file_names)}개 파일) 저장 완료!"
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
      
-    # ⭐ 4. 공유 중인 파일 상태 및 초기화(비우기) 버튼
+    # ⭐ 5. 공유 중인 파일 상태 및 초기화(비우기) 버튼
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
-        st.markdown("<p class='file-box-title'>✅ 현재 공유중인 승객 데이터</p>", unsafe_allow_html=True)
+        st.markdown(f"<p class='file-box-title'>✅ 현재 공유중인 [{upload_target}] 데이터</p>", unsafe_allow_html=True)
         
         if saved_files:
             for fname in saved_files:
@@ -403,10 +414,10 @@ with st.sidebar:
         else:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
-        if st.button("🗑 전체 데이터 비우기", use_container_width=True):
-            clear_sheet("pax_data")
-            clear_sheet("file_list")
-            st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+        if st.button(f"🗑 {upload_target} 데이터 비우기", use_container_width=True):
+            clear_sheet(target_sheet)
+            clear_sheet(target_list_sheet)
+            st.session_state["toast_msg"] = f"{upload_target} 데이터를 모두 비웠습니다."
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
      
@@ -415,8 +426,6 @@ with st.sidebar:
     st.divider()
     date_option = st.radio("📅 표시 날짜 선택", ["어제 (-1일)", "오늘", "내일 (+1일)"], index=1)
     
-    KST = timezone(timedelta(hours=9))
-    today_date = datetime.now(KST)
     if date_option == "어제 (-1일)": target_date = today_date - timedelta(days=1)
     elif date_option == "내일 (+1일)": target_date = today_date + timedelta(days=1)
     else: target_date = today_date
