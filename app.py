@@ -33,7 +33,7 @@ def save_to_sheet(df, sheet_name):
         try:
             sheet = spreadsheet.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+            sheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
         sheet.clear()
         data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
         sheet.update(range_name="A1", values=data_to_save)
@@ -51,7 +51,7 @@ def append_file_names(new_names, sheet_name="file_list"):
         try:
             sheet = spreadsheet.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="1")
+            sheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=1)
         existing_list = load_file_names(sheet_name)
         combined = list(set(existing_list + new_names))
         sheet.clear()
@@ -102,6 +102,64 @@ def clear_sheet(sheet_name):
         pass
     except Exception as e:
         st.sidebar.error(f"⚠ 데이터 비우기 실패: {e}")
+
+# =====================================================================
+# ⭐ [자정 자동 스위칭 엔진] 업로드 사이트에도 완벽 탑재!
+# =====================================================================
+def perform_midnight_migration(today_str):
+    try:
+        spreadsheet = get_spreadsheet()
+        
+        try:
+            status_sheet = spreadsheet.worksheet("system_status")
+            last_mig = status_sheet.acell('B1').value
+        except gspread.exceptions.WorksheetNotFound:
+            status_sheet = spreadsheet.add_worksheet(title="system_status", rows=2, cols=2)
+            status_sheet.update(range_name="A1", values=[["last_migration", "1999-01-01"]])
+            last_mig = "1999-01-01"
+            
+        if last_mig != today_str:
+            try: tom_pax_data = spreadsheet.worksheet("pax_tomorrow").get_all_values()
+            except: tom_pax_data = []
+            
+            try: tom_files_data = spreadsheet.worksheet("file_list_tomorrow").get_all_values()
+            except: tom_files_data = []
+            
+            try: tod_pax_sheet = spreadsheet.worksheet("pax_today")
+            except: tod_pax_sheet = spreadsheet.add_worksheet(title="pax_today", rows=1000, cols=20)
+            tod_pax_sheet.clear()
+            if len(tom_pax_data) > 0: tod_pax_sheet.update(range_name="A1", values=tom_pax_data)
+            
+            try: tod_files_sheet = spreadsheet.worksheet("file_list_today")
+            except: tod_files_sheet = spreadsheet.add_worksheet(title="file_list_today", rows=100, cols=1)
+            tod_files_sheet.clear()
+            if len(tom_files_data) > 0: tod_files_sheet.update(range_name="A1", values=tom_files_data)
+            
+            try: spreadsheet.worksheet("pax_tomorrow").clear()
+            except: pass
+            try: spreadsheet.worksheet("file_list_tomorrow").clear()
+            except: pass
+            
+            status_sheet.update(range_name="B1", values=[[today_str]])
+            
+            try: get_gspread_client.clear()
+            except: pass
+            try: get_spreadsheet.clear()
+            except: pass
+            try: load_from_sheet.clear()
+            except: pass
+            try: load_file_names.clear()
+            except: pass
+    except Exception as e:
+        pass 
+
+now_kst_time = datetime.now(timezone(timedelta(hours=9)))
+today_date_str = now_kst_time.strftime("%Y-%m-%d")
+
+if st.session_state.get("last_migration_check") != today_date_str:
+    perform_midnight_migration(today_date_str)
+    st.session_state["last_migration_check"] = today_date_str
+# =====================================================================
      
 if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon="✅")
@@ -347,7 +405,7 @@ with st.sidebar:
     today_str = f"오늘 ({today_date.month}월 {today_date.day}일)"
     tomorrow_str = f"내일 ({tomorrow_date.month}월 {tomorrow_date.day}일)"
     
-    upload_target = st.radio("📅 업로드할 데이터 날짜 / 내일 파일이면 내일날짜로 선택", [today_str, tomorrow_str], index=1, horizontal=True)
+    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_str, tomorrow_str], index=1, horizontal=True)
     
     target_sheet = "pax_today" if "오늘" in upload_target else "pax_tomorrow"
     target_list_sheet = "file_list_today" if "오늘" in upload_target else "file_list_tomorrow"
