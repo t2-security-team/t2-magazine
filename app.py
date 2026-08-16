@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import io
+import io 
 from datetime import datetime, timedelta, timezone
      
 # 1. 페이지 설정
@@ -33,7 +33,7 @@ def save_to_sheet(df, sheet_name):
         try:
             sheet = spreadsheet.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
         sheet.clear()
         data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
         sheet.update(range_name="A1", values=data_to_save)
@@ -43,16 +43,15 @@ def save_to_sheet(df, sheet_name):
         st.sidebar.error(f"⚠ 데이터 저장 실패: {e}")
         return False
      
-# ⭐ 파일 목록도 시트 이름을 받도록 수정
-def append_file_names(new_names, sheet_name="file_list"):
+def append_file_names(new_names):
     if not new_names: return
     try:
         spreadsheet = get_spreadsheet()
         try:
-            sheet = spreadsheet.worksheet(sheet_name)
+            sheet = spreadsheet.worksheet("file_list")
         except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=1)
-        existing_list = load_file_names(sheet_name)
+            sheet = spreadsheet.add_worksheet(title="file_list", rows="100", cols="1")
+        existing_list = load_file_names()
         combined = list(set(existing_list + new_names))
         sheet.clear()
         df = pd.DataFrame(combined, columns=["파일명"])
@@ -62,12 +61,11 @@ def append_file_names(new_names, sheet_name="file_list"):
     except Exception as e:
         st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
      
-# ⭐ 파일 목록 캐싱 시 시트 이름도 인자로 받아 개별 캐싱
 @st.cache_data(ttl=1800, show_spinner=False)
-def load_file_names(sheet_name="file_list"):
+def load_file_names():
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet(sheet_name)
+        sheet = spreadsheet.worksheet("file_list")
         data = sheet.get_all_values()
         if len(data) > 1:
             return [row[0] for row in data[1:] if row and row[0].strip() != ""]
@@ -102,64 +100,6 @@ def clear_sheet(sheet_name):
         pass
     except Exception as e:
         st.sidebar.error(f"⚠ 데이터 비우기 실패: {e}")
-
-# =====================================================================
-# ⭐ [자정 자동 스위칭 엔진] 업로드 사이트에도 완벽 탑재!
-# =====================================================================
-def perform_midnight_migration(today_str):
-    try:
-        spreadsheet = get_spreadsheet()
-        
-        try:
-            status_sheet = spreadsheet.worksheet("system_status")
-            last_mig = status_sheet.acell('B1').value
-        except gspread.exceptions.WorksheetNotFound:
-            status_sheet = spreadsheet.add_worksheet(title="system_status", rows=2, cols=2)
-            status_sheet.update(range_name="A1", values=[["last_migration", "1999-01-01"]])
-            last_mig = "1999-01-01"
-            
-        if last_mig != today_str:
-            try: tom_pax_data = spreadsheet.worksheet("pax_tomorrow").get_all_values()
-            except: tom_pax_data = []
-            
-            try: tom_files_data = spreadsheet.worksheet("file_list_tomorrow").get_all_values()
-            except: tom_files_data = []
-            
-            try: tod_pax_sheet = spreadsheet.worksheet("pax_today")
-            except: tod_pax_sheet = spreadsheet.add_worksheet(title="pax_today", rows=1000, cols=20)
-            tod_pax_sheet.clear()
-            if len(tom_pax_data) > 0: tod_pax_sheet.update(range_name="A1", values=tom_pax_data)
-            
-            try: tod_files_sheet = spreadsheet.worksheet("file_list_today")
-            except: tod_files_sheet = spreadsheet.add_worksheet(title="file_list_today", rows=100, cols=1)
-            tod_files_sheet.clear()
-            if len(tom_files_data) > 0: tod_files_sheet.update(range_name="A1", values=tom_files_data)
-            
-            try: spreadsheet.worksheet("pax_tomorrow").clear()
-            except: pass
-            try: spreadsheet.worksheet("file_list_tomorrow").clear()
-            except: pass
-            
-            status_sheet.update(range_name="B1", values=[[today_str]])
-            
-            try: get_gspread_client.clear()
-            except: pass
-            try: get_spreadsheet.clear()
-            except: pass
-            try: load_from_sheet.clear()
-            except: pass
-            try: load_file_names.clear()
-            except: pass
-    except Exception as e:
-        pass 
-
-now_kst_time = datetime.now(timezone(timedelta(hours=9)))
-today_date_str = now_kst_time.strftime("%Y-%m-%d")
-
-if st.session_state.get("last_migration_check") != today_date_str:
-    perform_midnight_migration(today_date_str)
-    st.session_state["last_migration_check"] = today_date_str
-# =====================================================================
      
 if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon="✅")
@@ -392,35 +332,23 @@ with st.sidebar:
     st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
     st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+    # ⭐ 새로 추가된 실시간 연동 버전 이동 버튼!
     st.link_button("🔄 실시간 연동 버전으로 이동", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
     st.divider()
     
     st.header("📂 데이터 업로드")
     
-    # ⭐ 1. 날짜 설정 및 업로드 타겟 기본값 (항상 '내일'로 고정 + 날짜 표시)
-    KST = timezone(timedelta(hours=9))
-    today_date = datetime.now(KST)
-    tomorrow_date = today_date + timedelta(days=1)
+    # ⭐ 1. 저장된 파일 목록과 데이터를 먼저 불러와서 파일 수를 체크합니다.
+    saved_pax_df = load_from_sheet("pax_data")
+    saved_files = load_file_names()
     
-    today_str = f"오늘 ({today_date.month}월 {today_date.day}일)"
-    tomorrow_str = f"내일 ({tomorrow_date.month}월 {tomorrow_date.day}일)"
-    
-    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_str, tomorrow_str], index=1, horizontal=True)
-    
-    target_sheet = "pax_today" if "오늘" in upload_target else "pax_tomorrow"
-    target_list_sheet = "file_list_today" if "오늘" in upload_target else "file_list_tomorrow"
-    
-    # ⭐ 2. 선택된 날짜에 맞는 파일 목록과 데이터 불러오기
-    saved_pax_df = load_from_sheet(target_sheet)
-    saved_files = load_file_names(target_list_sheet)
-    
-    # ⭐ 3. 해당 날짜 방에 3개 이상 등록되어 있으면 잠금
+    # ⭐ 2. 파일이 3개 이상 등록되어 있으면 업로드 잠금 처리
     is_upload_locked = len(saved_files) >= 3
     
     if is_upload_locked:
-        st.error(f"🚨 **업로드 제한됨**\n\n[{upload_target}] 데이터에 이미 3개의 파일이 등록되어 있습니다. 아래의 **[🗑 {upload_target} 데이터 비우기]** 버튼을 먼저 눌러주세요.")
+        st.error("🚨 **업로드 제한됨**\n\n이미 3개의 승객 데이터가 등록되어 있습니다. 중복 오류 방지를 위해 아래의 **[🗑 전체 데이터 비우기]** 버튼을 먼저 눌러주세요.")
     
-    # ⭐ 4. 업로드 기능
+    # ⭐ 3. disabled 옵션을 적용하여 파일이 3개 이상이면 업로드 창을 회색으로 막음
     uploaded_pax_files = st.file_uploader(
         "1. 승객수 파일 (.xls, .xlsx, .csv)", 
         accept_multiple_files=True, 
@@ -430,7 +358,7 @@ with st.sidebar:
     
     if uploaded_pax_files and not is_upload_locked:
         if st.button("💾 파일 저장", use_container_width=True):
-            with st.spinner(f"📤 {upload_target} 파일을 처리하고 저장하는 중..."):
+            with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
                 for f in uploaded_pax_files:
@@ -454,21 +382,20 @@ with st.sidebar:
                 upload_ok = False
                 if p_temp:
                     combined_df = pd.concat(p_temp).drop_duplicates('편명')
-                    # ⭐ 선택된 타겟 시트로 저장
-                    upload_ok = save_to_sheet(combined_df, target_sheet)
+                    upload_ok = save_to_sheet(combined_df, "pax_data")
                     if upload_ok:
-                        append_file_names(new_file_names, target_list_sheet)
+                        append_file_names(new_file_names)
             
             if upload_ok:
-                st.session_state["toast_msg"] = f"{upload_target} 데이터({len(new_file_names)}개 파일) 저장 완료!"
+                st.session_state["toast_msg"] = f"{len(new_file_names)}개 파일 업로드 완료!"
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
      
-    # ⭐ 5. 공유 중인 파일 상태 및 초기화(비우기) 버튼
+    # ⭐ 4. 공유 중인 파일 상태 및 초기화(비우기) 버튼
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
-        st.markdown(f"<p class='file-box-title'>✅ 현재 공유중인 [{upload_target}] 데이터</p>", unsafe_allow_html=True)
+        st.markdown("<p class='file-box-title'>✅ 현재 공유중인 승객 데이터</p>", unsafe_allow_html=True)
         
         if saved_files:
             for fname in saved_files:
@@ -476,33 +403,11 @@ with st.sidebar:
         else:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
-        # [오늘]을 선택하고 비우기를 눌렀을 때만 알람 창(경고문) 띄우기
-        if "오늘" in upload_target:
-            if st.button(f"🗑 {upload_target} 데이터 비우기", use_container_width=True):
-                st.session_state.show_today_warning = True
-
-            # 경고 알람 창 (버튼 누르면 나타남)
-            if st.session_state.get("show_today_warning", False):
-                st.error("🚨 **[경고] 이 데이터를 비우면 더 이상 오늘 잡지를 볼 수 없습니다!**\n\n내일 잡지는 상단에서 **[내일]**을 클릭한 후 파일을 저장해 주세요.")
-                col1, col2 = st.columns(2)
-                if col1.button("강제 비우기"):
-                    clear_sheet(target_sheet)
-                    clear_sheet(target_list_sheet)
-                    st.session_state.show_today_warning = False
-                    st.session_state["toast_msg"] = "오늘 데이터를 비웠습니다."
-                    st.rerun()
-                if col2.button("취소", type="primary"):
-                    st.session_state.show_today_warning = False
-                    st.rerun()
-        else:
-            # [내일] 데이터는 평소처럼 바로 비우기
-            if st.button(f"🗑 {upload_target} 데이터 비우기", use_container_width=True):
-                clear_sheet(target_sheet)
-                clear_sheet(target_list_sheet)
-                st.session_state.show_today_warning = False
-                st.session_state["toast_msg"] = f"{upload_target} 데이터를 모두 비웠습니다."
-                st.rerun()
-                
+        if st.button("🗑 전체 데이터 비우기", use_container_width=True):
+            clear_sheet("pax_data")
+            clear_sheet("file_list")
+            st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+            st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
      
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
@@ -510,6 +415,8 @@ with st.sidebar:
     st.divider()
     date_option = st.radio("📅 표시 날짜 선택", ["어제 (-1일)", "오늘", "내일 (+1일)"], index=1)
     
+    KST = timezone(timedelta(hours=9))
+    today_date = datetime.now(KST)
     if date_option == "어제 (-1일)": target_date = today_date - timedelta(days=1)
     elif date_option == "내일 (+1일)": target_date = today_date + timedelta(days=1)
     else: target_date = today_date
@@ -571,18 +478,12 @@ for f in gate_files:
      
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
-    with st.expander("📢 8월 15일 시스템 업데이트 안내 (필독)", expanded=True):
+    with st.expander("💡 홈페이지 이용 방법 (필독)", expanded=True):
         st.markdown("""
-        **1. '오늘 자 실시간 잡지' 유지 기능 추가**
-        의견을 반영하여, 내일 자 승객 데이터를 미리 올리더라도 당일 자정(00시)까지는 오늘 자 잡지를 계속 조회할 수 있도록 시스템을 개선했습니다.
-        
-        * **[변경 전]** 내일 자 파일 업로드 즉시, 오늘 자 잡지 조회 불가
-        * **[변경 후]** 내일 자 파일을 미리 업로드해도 남은 시간 동안 오늘 자 실시간 잡지 정상 조회 가능 (자정에 맞춰 시스템이 자동으로 내일 자 데이터로 전환함)
-
-        ---
-        
-        **2. 데이터 업로드 시 매니저님 유의사항**
-        업로드 방식은 기존과 크게 다르지 않습니다. 승객수 파일 업로드 시, 상단의 업로드 날짜 선택란에 **'내일'**이 올바르게 체크되어 있는지만 한 번 더 확인하신 후 등록해 주시면 됩니다! 이상있으면 바로 연락주세요
+        ### 🌐 데이터 공유 방식 안내
+        * **자동 공유:** 1번째 파일(승객수 파일)을 업로드하고 **[파일 저장] 버튼을 누르면** 서버에 보관되어 모든 팀원이 동일한 데이터를 볼 수 있습니다.
+        * **비우기 버튼:** 다음 날 데이터를 넣기 전, 사이드바의 **[🗑 전체 데이터 비우기]** 버튼을 누르면 서버 데이터가 초기화됩니다.
+        * **중복 방지 제한:** 현재 서버에 3개의 승객수 파일이 등록되어 있는 경우 데이터 오류 방지를 위해 업로드가 제한됩니다. 반드시 [🗑 전체 데이터 비우기] 후 새 파일을 등록해 주세요.
         """)
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
