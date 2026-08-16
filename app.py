@@ -531,7 +531,7 @@ for f in gate_files:
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
     with st.expander("📢 시스템 안내", expanded=True):
-        st.markdown("왼쪽에서 파일을 등록해 주세요.")
+        st.markdown("파일비우기 안눌러도 됩니다. 내일 승객수 파일은 내일날짜에 올려주세요. 파일저장 꼭 눌러주세요. 내일 잡지 파일 올려도 자정전까지 실시간 잡지사용 가능합니다.")
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
     df_g = pd.concat(g_all).drop_duplicates('편명')
