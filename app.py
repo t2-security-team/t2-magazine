@@ -3,15 +3,20 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import io 
+import io
 from datetime import datetime, timedelta, timezone
-     
+
 # 1. 페이지 설정
 st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
-     
-# ⭐ [구글 시트 연동 설정]
+
+# KST(한국시간) 기준 날짜 세팅
+KST = timezone(timedelta(hours=9))
+now_kst_time = datetime.now(KST)
+today_date_str = now_kst_time.strftime("%Y-%m-%d")
+tomorrow_date_str = (now_kst_time + timedelta(days=1)).strftime("%Y-%m-%d")
+
 SHEET_NAME = "보안검색_데이터_공유" 
-     
+
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
     creds_dict = dict(st.secrets["gcp"])
@@ -21,86 +26,120 @@ def get_gspread_client():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
-     
+
 @st.cache_resource(show_spinner=False)
 def get_spreadsheet():
     client = get_gspread_client()
     return client.open(SHEET_NAME)
-     
-def save_to_sheet(df, sheet_name):
+
+# ⭐ [핵심 1] 꼬리표(날짜) 달고 데이터 저장 + 과거 데이터 자동 청소
+def update_pax_data(new_df, target_date_str):
+    new_df['조회일자'] = target_date_str
+    spreadsheet = get_spreadsheet()
     try:
-        spreadsheet = get_spreadsheet()
-        try:
-            sheet = spreadsheet.worksheet(sheet_name)
-        except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
-        sheet.clear()
-        data_to_save = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
-        sheet.update(range_name="A1", values=data_to_save)
-        load_from_sheet.clear() 
-        return True
-    except Exception as e:
-        st.sidebar.error(f"⚠ 데이터 저장 실패: {e}")
-        return False
-     
-def append_file_names(new_names):
-    if not new_names: return
+        sheet = spreadsheet.worksheet("pax_data")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            existing_df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in existing_df.columns:
+                existing_df['조회일자'] = today_date_str
+        else:
+            existing_df = pd.DataFrame(columns=['조회일자', '편명', '승객수', '출발지'])
+    except:
+        sheet = spreadsheet.add_worksheet(title="pax_data", rows=1000, cols=20)
+        existing_df = pd.DataFrame(columns=['조회일자', '편명', '승객수', '출발지'])
+
+    combined = pd.concat([existing_df, new_df], ignore_index=True)
+    # 오늘보다 이전인 과거 데이터는 몰래 싹 청소해줌 (용량 쾌적)
+    combined = combined[combined['조회일자'] >= today_date_str]
+    combined.drop_duplicates(subset=['조회일자', '편명'], keep='last', inplace=True)
+
+    sheet.clear()
+    data_to_save = [combined.columns.values.tolist()] + combined.fillna("").astype(str).values.tolist()
+    sheet.update(range_name="A1", values=data_to_save)
+    load_pax_data.clear()
+    return True
+
+# ⭐ [핵심 2] 파일 목록도 꼬리표 달고 저장
+def update_file_list(new_files, target_date_str):
+    new_df = pd.DataFrame({'조회일자': [target_date_str]*len(new_files), '파일명': new_files})
+    spreadsheet = get_spreadsheet()
     try:
-        spreadsheet = get_spreadsheet()
-        try:
-            sheet = spreadsheet.worksheet("file_list")
-        except gspread.exceptions.WorksheetNotFound:
-            sheet = spreadsheet.add_worksheet(title="file_list", rows="100", cols="1")
-        existing_list = load_file_names()
-        combined = list(set(existing_list + new_names))
-        sheet.clear()
-        df = pd.DataFrame(combined, columns=["파일명"])
-        data_to_save = [df.columns.values.tolist()] + df.values.tolist()
-        sheet.update(range_name="A1", values=data_to_save)
-        load_file_names.clear() 
-    except Exception as e:
-        st.sidebar.error(f"⚠ 파일 목록 저장 실패: {e}")
-     
-@st.cache_data(ttl=1800, show_spinner=False)
-def load_file_names():
+        sheet = spreadsheet.worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            existing_df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in existing_df.columns:
+                existing_df['조회일자'] = today_date_str
+        else:
+            existing_df = pd.DataFrame(columns=['조회일자', '파일명'])
+    except:
+        sheet = spreadsheet.add_worksheet(title="file_list", rows=100, cols=5)
+        existing_df = pd.DataFrame(columns=['조회일자', '파일명'])
+
+    combined = pd.concat([existing_df, new_df], ignore_index=True)
+    combined = combined[combined['조회일자'] >= today_date_str]
+    combined.drop_duplicates(subset=['조회일자', '파일명'], keep='last', inplace=True)
+
+    sheet.clear()
+    data_to_save = [combined.columns.values.tolist()] + combined.fillna("").astype(str).values.tolist()
+    sheet.update(range_name="A1", values=data_to_save)
+    load_file_list.clear()
+
+@st.cache_data(ttl=1800, max_entries=1, show_spinner=False)
+def load_file_list():
     try:
         spreadsheet = get_spreadsheet()
         sheet = spreadsheet.worksheet("file_list")
         data = sheet.get_all_values()
         if len(data) > 1:
-            return [row[0] for row in data[1:] if row and row[0].strip() != ""]
-    except gspread.exceptions.WorksheetNotFound:
-        pass
-    except Exception as e:
-        st.sidebar.error(f"⚠ 파일 목록 불러오기 실패: {e}")
-    return []
-     
-@st.cache_data(ttl=1800, show_spinner=False)
-def load_from_sheet(sheet_name):
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            return df
+    except: pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=21600, max_entries=1, show_spinner=False)
+def load_pax_data():
     try:
         spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet(sheet_name)
+        sheet = spreadsheet.worksheet("pax_data")
         data = sheet.get_all_values()
         if len(data) > 1:
-            return pd.DataFrame(data[1:], columns=data[0])
-    except gspread.exceptions.WorksheetNotFound:
-        pass
-    except Exception as e:
-        st.sidebar.error(f"⚠ 데이터 불러오기 실패: {e}")
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            return df
+    except: pass
     return pd.DataFrame()
-     
-def clear_sheet(sheet_name):
+
+# ⭐ 특정 날짜 데이터 비우기 (강제 비우기)
+def clear_date_data(target_date_str):
+    spreadsheet = get_spreadsheet()
     try:
-        spreadsheet = get_spreadsheet()
-        sheet = spreadsheet.worksheet(sheet_name)
-        sheet.clear()
-        load_from_sheet.clear() 
-        load_file_names.clear()
-    except gspread.exceptions.WorksheetNotFound:
-        pass
-    except Exception as e:
-        st.sidebar.error(f"⚠ 데이터 비우기 실패: {e}")
-     
+        sheet = spreadsheet.worksheet("pax_data")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            df = df[(df['조회일자'] != target_date_str) & (df['조회일자'] >= today_date_str)]
+            sheet.clear()
+            sheet.update(range_name="A1", values=[df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist())
+    except: pass
+
+    try:
+        sheet = spreadsheet.worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            df = df[(df['조회일자'] != target_date_str) & (df['조회일자'] >= today_date_str)]
+            sheet.clear()
+            sheet.update(range_name="A1", values=[df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist())
+    except: pass
+
+    load_pax_data.clear()
+    load_file_list.clear()
+
 if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon="✅")
     del st.session_state["toast_msg"]
@@ -129,24 +168,9 @@ st.markdown("""
     .carrier-item { font-size: 14px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
     .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
-    
-    @media print {
-        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe { display: none !important; }
-        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
-        .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
-        div[data-testid="stVerticalBlock"] { gap: 0 !important; }
-        body { zoom: 75%; }
-        .print-row { display: flex !important; flex-direction: row !important; }
-        table { page-break-inside: auto; margin-bottom: 0px !important; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        thead { display: table-header-group; }
-        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
-        @page :first { margin-top: 0mm !important; }
-    }
     </style>
 """, unsafe_allow_html=True)
      
-# --- [도구함] ---
 def clean_flight_no(val):
     if pd.isna(val): return ""
     val = str(val).strip().replace(" ", "").upper()
@@ -332,23 +356,35 @@ with st.sidebar:
     st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
     st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
     st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
-    # ⭐ 새로 추가된 실시간 연동 버전 이동 버튼!
     st.link_button("🔄 실시간 연동 버전으로 이동", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
     st.divider()
     
     st.header("📂 데이터 업로드")
     
-    # ⭐ 1. 저장된 파일 목록과 데이터를 먼저 불러와서 파일 수를 체크합니다.
-    saved_pax_df = load_from_sheet("pax_data")
-    saved_files = load_file_names()
+    today_ui_str = f"오늘 ({now_kst_time.month}월 {now_kst_time.day}일)"
+    tomorrow_ui_str = f"내일 ({(now_kst_time + timedelta(days=1)).month}월 {(now_kst_time + timedelta(days=1)).day}일)"
     
-    # ⭐ 2. 파일이 3개 이상 등록되어 있으면 업로드 잠금 처리
+    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_ui_str, tomorrow_ui_str], index=1, horizontal=True)
+    target_date_str = today_date_str if "오늘" in upload_target else tomorrow_date_str
+    
+    # 해당 날짜의 꼬리표가 붙은 파일만 쏙 가져옴
+    full_files_df = load_file_list()
+    if not full_files_df.empty:
+        saved_files = full_files_df[full_files_df['조회일자'] == target_date_str]['파일명'].tolist()
+    else:
+        saved_files = []
+        
+    full_pax_df = load_pax_data()
+    if not full_pax_df.empty:
+        saved_pax_df = full_pax_df[full_pax_df['조회일자'] == target_date_str]
+    else:
+        saved_pax_df = pd.DataFrame()
+    
     is_upload_locked = len(saved_files) >= 3
     
     if is_upload_locked:
-        st.error("🚨 **업로드 제한됨**\n\n이미 3개의 승객 데이터가 등록되어 있습니다. 중복 오류 방지를 위해 아래의 **[🗑 전체 데이터 비우기]** 버튼을 먼저 눌러주세요.")
+        st.error(f"🚨 **업로드 제한됨**\n\n해당 날짜에 이미 3개의 파일이 등록되어 있습니다. 아래의 데이터 비우기 버튼을 먼저 눌러주세요.")
     
-    # ⭐ 3. disabled 옵션을 적용하여 파일이 3개 이상이면 업로드 창을 회색으로 막음
     uploaded_pax_files = st.file_uploader(
         "1. 승객수 파일 (.xls, .xlsx, .csv)", 
         accept_multiple_files=True, 
@@ -358,7 +394,7 @@ with st.sidebar:
     
     if uploaded_pax_files and not is_upload_locked:
         if st.button("💾 파일 저장", use_container_width=True):
-            with st.spinner("📤 업로드한 파일을 처리하고 저장하는 중..."):
+            with st.spinner(f"📤 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
                 for f in uploaded_pax_files:
@@ -379,23 +415,24 @@ with st.sidebar:
                                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                                 p_temp.append(tmp)
                                 new_file_names.append(f.name)
+                
                 upload_ok = False
                 if p_temp:
                     combined_df = pd.concat(p_temp).drop_duplicates('편명')
-                    upload_ok = save_to_sheet(combined_df, "pax_data")
+                    # 여기서 선택한 날짜 꼬리표를 붙여서 시트에 밀어넣음!
+                    upload_ok = update_pax_data(combined_df, target_date_str)
                     if upload_ok:
-                        append_file_names(new_file_names)
+                        update_file_list(new_file_names, target_date_str)
             
             if upload_ok:
-                st.session_state["toast_msg"] = f"{len(new_file_names)}개 파일 업로드 완료!"
+                st.session_state["toast_msg"] = f"{upload_target} 데이터 저장 완료!"
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
      
-    # ⭐ 4. 공유 중인 파일 상태 및 초기화(비우기) 버튼
     if not saved_pax_df.empty:
         st.markdown("<div class='file-box'>", unsafe_allow_html=True)
-        st.markdown("<p class='file-box-title'>✅ 현재 공유중인 승객 데이터</p>", unsafe_allow_html=True)
+        st.markdown(f"<p class='file-box-title'>✅ 현재 적용중인 데이터</p>", unsafe_allow_html=True)
         
         if saved_files:
             for fname in saved_files:
@@ -403,11 +440,28 @@ with st.sidebar:
         else:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
-        if st.button("🗑 전체 데이터 비우기", use_container_width=True):
-            clear_sheet("pax_data")
-            clear_sheet("file_list")
-            st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
-            st.rerun()
+        if "오늘" in upload_target:
+            if st.button(f"🗑 현재 화면 데이터 비우기", use_container_width=True):
+                st.session_state.show_today_warning = True
+
+            if st.session_state.get("show_today_warning", False):
+                st.error("🚨 **[경고] 이 데이터를 비우면 오늘 잡지를 볼 수 없습니다!**\n\n진행하시겠습니까?")
+                col1, col2 = st.columns(2)
+                if col1.button("강제 비우기"):
+                    clear_date_data(target_date_str)
+                    st.session_state.show_today_warning = False
+                    st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+                    st.rerun()
+                if col2.button("취소", type="primary"):
+                    st.session_state.show_today_warning = False
+                    st.rerun()
+        else:
+            if st.button(f"🗑 데이터 비우기", use_container_width=True):
+                clear_date_data(target_date_str)
+                st.session_state.show_today_warning = False
+                st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+                st.rerun()
+                
         st.markdown("</div>", unsafe_allow_html=True)
      
     gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
@@ -415,11 +469,9 @@ with st.sidebar:
     st.divider()
     date_option = st.radio("📅 표시 날짜 선택", ["어제 (-1일)", "오늘", "내일 (+1일)"], index=1)
     
-    KST = timezone(timedelta(hours=9))
-    today_date = datetime.now(KST)
-    if date_option == "어제 (-1일)": target_date = today_date - timedelta(days=1)
-    elif date_option == "내일 (+1일)": target_date = today_date + timedelta(days=1)
-    else: target_date = today_date
+    if date_option == "어제 (-1일)": target_date = now_kst_time - timedelta(days=1)
+    elif date_option == "내일 (+1일)": target_date = now_kst_time + timedelta(days=1)
+    else: target_date = now_kst_time
         
     display_date_str = target_date.strftime("%Y년 %m월 %d일")
     
@@ -478,13 +530,8 @@ for f in gate_files:
      
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
-    with st.expander("💡 홈페이지 이용 방법 (필독)", expanded=True):
-        st.markdown("""
-        ### 🌐 데이터 공유 방식 안내
-        * **자동 공유:** 1번째 파일(승객수 파일)을 업로드하고 **[파일 저장] 버튼을 누르면** 서버에 보관되어 모든 팀원이 동일한 데이터를 볼 수 있습니다.
-        * **비우기 버튼:** 다음 날 데이터를 넣기 전, 사이드바의 **[🗑 전체 데이터 비우기]** 버튼을 누르면 서버 데이터가 초기화됩니다.
-        * **중복 방지 제한:** 현재 서버에 3개의 승객수 파일이 등록되어 있는 경우 데이터 오류 방지를 위해 업로드가 제한됩니다. 반드시 [🗑 전체 데이터 비우기] 후 새 파일을 등록해 주세요.
-        """)
+    with st.expander("📢 시스템 안내", expanded=True):
+        st.markdown("왼쪽에서 파일을 등록해 주세요.")
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
     df_g = pd.concat(g_all).drop_duplicates('편명')
@@ -555,29 +602,18 @@ else:
                 try {
                     var win = window.parent;
                     var doc = win.document;
-                    
                     if (!win.html2canvas) {
                         var script = doc.createElement('script');
                         script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
                         script.onload = function() { doCap(win, doc, btn); };
-                        script.onerror = function() { 
-                            alert("⚠ 라이브러리를 불러올 수 없습니다."); 
-                            btn.innerText = "📸 전체 사진으로 저장"; 
-                        };
+                        script.onerror = function() { alert("⚠ 에러"); btn.innerText = "📸 캡처"; };
                         doc.head.appendChild(script);
-                    } else {
-                        doCap(win, doc, btn);
-                    }
-                } catch(e) {
-                    alert("⚠ 브라우저 보안 설정으로 인해 캡처가 차단되었습니다.");
-                    btn.innerText = "📸 전체 사진으로 저장";
-                }
+                    } else { doCap(win, doc, btn); }
+                } catch(e) { btn.innerText = "📸 캡처"; }
             }
-            
             function doCap(win, doc, btn) {
                 var target = doc.querySelector('.block-container') || doc.querySelector('.main');
                 var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe');
-                
                 var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
                 var mainView = doc.querySelector('.main');
                 
@@ -585,40 +621,17 @@ else:
                 var oldAppHeight = appView ? appView.style.height : '';
                 var oldMainOverflow = mainView ? mainView.style.overflow : '';
                 var oldMainHeight = mainView ? mainView.style.height : '';
-                var oldTargetPaddingTop = target.style.paddingTop;
-                var oldTargetMarginTop = target.style.marginTop;
-                var oldTargetWidth = target.style.width;
-                var oldTargetMaxWidth = target.style.maxWidth;
                 if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
                 if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
-                target.style.paddingTop = '10px';
-                target.style.marginTop = '0px';
-                target.style.width = '1100px'; 
-                target.style.maxWidth = '1100px';
-                hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                 
+                hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
                 setTimeout(function() {
-                    win.html2canvas(target, { 
-                        scale: 6, 
-                        useCORS: true, 
-                        backgroundColor: '#ffffff'
-                    }).then(function(canvas) {
-                        var link = doc.createElement('a');
-                        link.download = '보안검색_잡지_전체.png';
-                        link.href = canvas.toDataURL('image/png');
-                        link.click();
-                    }).catch(function(err) {
-                        alert("사진 생성 중 오류가 발생했습니다.");
+                    win.html2canvas(target, { scale: 6, useCORS: true, backgroundColor: '#ffffff' }).then(function(canvas) {
+                        var link = doc.createElement('a'); link.download = '잡지.png'; link.href = canvas.toDataURL('image/png'); link.click();
                     }).finally(function() {
                         if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
                         if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
-                        
-                        target.style.paddingTop = oldTargetPaddingTop;
-                        target.style.marginTop = oldTargetMarginTop;
-                        target.style.width = oldTargetWidth;
-                        target.style.maxWidth = oldTargetMaxWidth;
-                        hides.forEach(function(e){ e.style.display = e.dataset.old || ''; });
-                        btn.innerText = "📸 전체 사진으로 저장";
+                        hides.forEach(function(e){ e.style.display = e.dataset.old || ''; }); btn.innerText = "📸 전체 사진으로 저장";
                     });
                 }, 800);
             }
