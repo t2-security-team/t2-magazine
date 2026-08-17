@@ -168,6 +168,21 @@ st.markdown("""
     .carrier-item { font-size: 14px; font-weight: bold; }
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
     .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
+    
+    /* ⭐ 수정사항 1번: PDF 인쇄 시 사이드바 및 버튼 완벽 숨김 */
+    @media print {
+        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe, [data-testid="stHtml"] { display: none !important; }
+        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
+        .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+        div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+        body { zoom: 75%; }
+        .print-row { display: flex !important; flex-direction: row !important; }
+        table { page-break-inside: auto; margin-bottom: 0px !important; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
+        @page :first { margin-top: 0mm !important; }
+    }
     </style>
 """, unsafe_allow_html=True)
      
@@ -367,7 +382,6 @@ with st.sidebar:
     upload_target = st.radio("📅 업로드할 데이터 날짜", [today_ui_str, tomorrow_ui_str], index=1, horizontal=True)
     target_date_str = today_date_str if "오늘" in upload_target else tomorrow_date_str
     
-    # 해당 날짜의 꼬리표가 붙은 파일만 쏙 가져옴
     full_files_df = load_file_list()
     if not full_files_df.empty:
         saved_files = full_files_df[full_files_df['조회일자'] == target_date_str]['파일명'].tolist()
@@ -419,7 +433,6 @@ with st.sidebar:
                 upload_ok = False
                 if p_temp:
                     combined_df = pd.concat(p_temp).drop_duplicates('편명')
-                    # 여기서 선택한 날짜 꼬리표를 붙여서 시트에 밀어넣음!
                     upload_ok = update_pax_data(combined_df, target_date_str)
                     if upload_ok:
                         update_file_list(new_file_names, target_date_str)
@@ -464,7 +477,9 @@ with st.sidebar:
                 
         st.markdown("</div>", unsafe_allow_html=True)
      
-    gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
+    # ⭐ 수정사항 2번: 게이트 업로드 창을 '비상용'으로 접어두기
+    with st.expander("🚨 수동 게이트 업로드 (게이트 서버 장애시에만 사용)"):
+        gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
     date_option = st.radio("📅 표시 날짜 선택", ["어제 (-1일)", "오늘", "내일 (+1일)"], index=1)
@@ -606,14 +621,16 @@ else:
                         var script = doc.createElement('script');
                         script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
                         script.onload = function() { doCap(win, doc, btn); };
-                        script.onerror = function() { alert("⚠ 에러"); btn.innerText = "📸 캡처"; };
+                        script.onerror = function() { alert("⚠ 에러"); btn.innerText = "📸 전체 사진으로 저장"; };
                         doc.head.appendChild(script);
                     } else { doCap(win, doc, btn); }
-                } catch(e) { btn.innerText = "📸 캡처"; }
+                } catch(e) { btn.innerText = "📸 전체 사진으로 저장"; }
             }
+            
+            // ⭐ 수정사항 1번: 사진 캡처 시 사이드바 및 버튼 완벽 숨김 처리!
             function doCap(win, doc, btn) {
                 var target = doc.querySelector('.block-container') || doc.querySelector('.main');
-                var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe');
+                var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe, [data-testid="stHtml"]');
                 var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
                 var mainView = doc.querySelector('.main');
                 
