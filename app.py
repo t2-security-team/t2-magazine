@@ -560,7 +560,7 @@ if not (p_all and g_all):
     
     with col1:
         st.markdown("##### 🔄 실시간 잡지")
-        st.markdown("<span style='font-size: 13px; color: #6b7280;'>현재 운영 중인 실시간 데이터 연동 버전입니다.<첨두승객수 or 익일잡지></span>", unsafe_allow_html=True)
+        st.markdown("<span style='font-size: 13px; color: #6b7280;'>현재 운영 중인 실시간 데이터 연동 버전입니다.  <첨두승객수 or 익일잡지></span>", unsafe_allow_html=True)
         st.link_button("이동하기", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
         
     with col2:
