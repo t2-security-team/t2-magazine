@@ -454,7 +454,7 @@ with st.sidebar:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
         if "오늘" in upload_target:
-            if st.button(f"🗑 현재 화면 데이터 비우기", use_container_width=True):
+            if st.button(f"🗑 데이터 비우기", use_container_width=True):
                 st.session_state.show_today_warning = True
 
             if st.session_state.get("show_today_warning", False):
@@ -546,7 +546,7 @@ for f in gate_files:
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
     with st.expander("📢 시스템 안내", expanded=True):
-        st.markdown("데이터 비우기 필요 없이 보이는 화면에서 내일 승객수 파일만 내일 날짜에 올려주세요. 내일 잡지 파일 올려도 자정전까지 금일 실시간 잡지사용 가능합니다.")
+        st.markdown("보이는 화면에서 내일 승객수 파일만 내일 날짜에 올려주세요. 내일 잡지 파일 올려도 자정전까지 금일 실시간 잡지사용 가능합니다.")
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
     df_g = pd.concat(g_all).drop_duplicates('편명')
