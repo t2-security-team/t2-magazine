@@ -558,19 +558,19 @@ if not (p_all and g_all):
     
     st.markdown("##### 🔄 실시간 잡지")
     st.markdown("<span style='font-size: 13px; color: #6b7280;'>실시간 잡지.<br>&lt;첨두승객수 or 익일잡지&gt;</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
+    st.link_button("이동하기", "https://live-magazine-t2.streamlit.app/")
     
     st.markdown("<br>", unsafe_allow_html=True) # 요소 사이의 간격
     
     st.markdown("##### 💾 승객 수 파일저장")
     st.markdown("<span style='font-size: 13px; color: #6b7280;'>항공사 승객수 파일을 저장하고 관리.</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://t2-pax-magazine.streamlit.app/", use_container_width=True)
+    st.link_button("이동하기", "https://t2-pax-magazine.streamlit.app/")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     st.markdown("##### ⏪ 초기 버전")
     st.markdown("<span style='font-size: 13px; color: #6b7280;'>과거에 사용하던 구형 잡지 버전입니다.</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+    st.link_button("이동하기", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/")
 
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
