@@ -545,8 +545,33 @@ for f in gate_files:
      
 if not (p_all and g_all):
     st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
-    with st.expander("📢 시스템 안내", expanded=True):
-        st.markdown("보이는 화면에서 내일 승객수 파일만 내일 날짜에 올려주세요. 내일 잡지 파일 올려도 자정전까지 금일 실시간 잡지사용 가능합니다.")
+    st.markdown("<p style='text-align: center; color: #4B5563; margin-bottom: 30px;'>👋 환영합니다! 좌측 사이드바에서 데이터를 업로드하시거나, 아래 링크를 통해 원하시는 시스템으로 이동해 주세요.</p>", unsafe_allow_html=True)
+    
+    with st.expander("📢 시스템 이용 안내", expanded=True):
+        st.markdown("""
+        * **데이터 업로드**: 좌측 메뉴에서 **'내일'** 날짜를 선택한 후 내일자 승객수 파일을 올려주세요.
+        * **실시간 연동**: 내일 데이터를 미리 업로드해 두어도, 자정 전까지는 '실시간 잡지'에서 오늘의 데이터를 정상적으로 확인하실 수 있습니다.
+        """)
+        
+    st.divider()
+    st.markdown("### 🔗 빠른 시스템 이동")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("##### 🔄 실시간 잡지")
+        st.markdown("<span style='font-size: 13px; color: #6b7280;'>현재 운영 중인 실시간 데이터 연동 버전입니다.</span>", unsafe_allow_html=True)
+        st.link_button("이동하기", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
+        
+    with col2:
+        st.markdown("##### 💾 승객 수 파일저장")
+        st.markdown("<span style='font-size: 13px; color: #6b7280;'>날짜별 승객수 데이터를 미리 저장하고 관리하는 현재 버전입니다.</span>", unsafe_allow_html=True)
+        st.link_button("이동하기", "https://t2-pax-magazine.streamlit.app/", use_container_width=True)
+        
+    with col3:
+        st.markdown("##### ⏪ 초기 버전")
+        st.markdown("<span style='font-size: 13px; color: #6b7280;'>과거에 사용하던 구형 잡지 버전입니다.</span>", unsafe_allow_html=True)
+        st.link_button("이동하기", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
 else:
     df_p = pd.concat(p_all).drop_duplicates('편명')
     df_g = pd.concat(g_all).drop_duplicates('편명')
@@ -674,5 +699,4 @@ else:
         
         w_html = generate_table_html(final[final['구역'] == '서편'], "⬅ 서편", west_p, "#DC2626", opt_airline, opt_peak, base_font_size)
         e_html = generate_table_html(final[final['구역'] == '동편'], "➡ 동편", east_p, "#2563EB", opt_airline, opt_peak, base_font_size)
-        
         st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
