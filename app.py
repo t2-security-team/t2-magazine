@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 import gspread
@@ -453,25 +454,13 @@ with st.sidebar:
         else:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
+        # ⭐ [핵심 방어막 패치] '오늘' 데이터 삭제 완벽 차단!
         if "오늘" in upload_target:
-            if st.button(f"🗑 데이터 비우기", use_container_width=True):
-                st.session_state.show_today_warning = True
-
-            if st.session_state.get("show_today_warning", False):
-                st.error("🚨 **[경고] 이 데이터를 비우면 오늘 잡지를 볼 수 없습니다!**\n\n진행하시겠습니까?")
-                col1, col2 = st.columns(2)
-                if col1.button("강제 비우기"):
-                    clear_date_data(target_date_str)
-                    st.session_state.show_today_warning = False
-                    st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
-                    st.rerun()
-                if col2.button("취소", type="primary"):
-                    st.session_state.show_today_warning = False
-                    st.rerun()
+            st.button(f"🗑 오늘 데이터 비우기 (불가)", use_container_width=True, disabled=True)
+            st.caption("🚨 실시간 잡지 표출을 위해 오늘 데이터는 지울 수 없습니다.")
         else:
             if st.button(f"🗑 데이터 비우기", use_container_width=True):
                 clear_date_data(target_date_str)
-                st.session_state.show_today_warning = False
                 st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
                 st.rerun()
                 
