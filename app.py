@@ -51,7 +51,6 @@ def update_pax_data(new_df, target_date_str):
         existing_df = pd.DataFrame(columns=['조회일자', '편명', '승객수', '출발지'])
 
     combined = pd.concat([existing_df, new_df], ignore_index=True)
-    # 오늘보다 이전인 과거 데이터는 몰래 싹 청소해줌 (용량 쾌적)
     combined = combined[combined['조회일자'] >= today_date_str]
     combined.drop_duplicates(subset=['조회일자', '편명'], keep='last', inplace=True)
 
@@ -170,7 +169,6 @@ st.markdown("""
     .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
     .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
     
-    /* ⭐ 수정사항 1번: PDF 인쇄 시 사이드바 및 버튼 완벽 숨김 */
     @media print {
         .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe, [data-testid="stHtml"] { display: none !important; }
         html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
@@ -454,10 +452,22 @@ with st.sidebar:
         else:
             st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
             
-        # ⭐ [핵심 방어막 패치] '오늘' 데이터 삭제 완벽 차단!
+        # ⭐ [강력 패치] 관리자용 비밀번호 잠금 기능 탑재!
         if "오늘" in upload_target:
-            st.button(f"🗑 오늘 데이터 비우기 (불가)", use_container_width=True, disabled=True)
-            st.caption("🚨 실시간 잡지 표출을 위해 오늘 데이터는 지울 수 없습니다.")
+            with st.expander("🚨 오늘 데이터 강제 비우기 (관리자용)"):
+                st.markdown("<span style='font-size:12px; color:gray;'>실시간 잡지 표출에 문제가 생길 수 있으므로 가급적 지우지 마세요.</span>", unsafe_allow_html=True)
+                
+                # 비밀번호 입력창
+                admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리")
+                
+                # 🔑 여기에 원하는 비밀번호를 세팅하세요! (현재는 "0000")
+                if admin_pw == "0000":  
+                    if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
+                        clear_date_data(target_date_str)
+                        st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
+                        st.rerun()
+                elif admin_pw != "":
+                    st.error("비밀번호가 일치하지 않습니다.")
         else:
             if st.button(f"🗑 데이터 비우기", use_container_width=True):
                 clear_date_data(target_date_str)
@@ -466,7 +476,6 @@ with st.sidebar:
                 
         st.markdown("</div>", unsafe_allow_html=True)
      
-    # ⭐ 수정사항 2번: 게이트 업로드 창을 '비상용'으로 접어두기
     with st.expander("🚨 수동 게이트 업로드 (게이트 서버 장애시에만 사용)"):
         gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
@@ -641,7 +650,6 @@ else:
                 } catch(e) { btn.innerText = "📸 전체 사진으로 저장"; }
             }
             
-            // ⭐ 수정사항 1번: 사진 캡처 시 사이드바 및 버튼 완벽 숨김 처리!
             function doCap(win, doc, btn) {
                 var target = doc.querySelector('.block-container') || doc.querySelector('.main');
                 var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe, [data-testid="stHtml"]');
