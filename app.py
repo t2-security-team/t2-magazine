@@ -150,6 +150,9 @@ st.markdown("""
     /* Hide the icon-only source button; retain labeled actions and the app controls.
        Selector follows Streamlit ToolbarActions; verify after Streamlit upgrades. */
     [data-testid="stToolbarActions"] [data-testid="stToolbarActionButton"]:has([data-testid="stToolbarActionButtonIcon"]):not(:has([data-testid="stToolbarActionButtonLabel"])) {
+    /* Hide hosted toolbar actions (Fork and GitHub source).
+       Keep the sidebar controls and main menu available. */
+    [data-testid="stToolbarActions"] {
         display: none !important;
     }
     .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
