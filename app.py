@@ -147,14 +147,11 @@ if "toast_msg" in st.session_state:
 # --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
     <style>
-    /* Hide the icon-only source button; retain labeled actions and the app controls.
-       Selector follows Streamlit ToolbarActions; verify after Streamlit upgrades. */
-    [data-testid="stToolbarActions"] [data-testid="stToolbarActionButton"]:has([data-testid="stToolbarActionButtonIcon"]):not(:has([data-testid="stToolbarActionButtonLabel"])) {
-    /* Hide hosted toolbar actions (Fork and GitHub source).
-       Keep the sidebar controls and main menu available. */
+    /* 상단 Fork 버튼과 GitHub 고양이 아이콘 숨김 */
     [data-testid="stToolbarActions"] {
         display: none !important;
     }
+
     .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
     div[data-testid="stVerticalBlock"] { gap: 0px !important; }
     .element-container { margin-bottom: 0px !important; }
