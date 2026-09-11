@@ -147,6 +147,11 @@ if "toast_msg" in st.session_state:
 # --- [디자인 및 PDF 압축 CSS] ---
 st.markdown("""
     <style>
+    /* Hide the icon-only source button; retain labeled actions and the app controls.
+       Selector follows Streamlit ToolbarActions; verify after Streamlit upgrades. */
+    [data-testid="stToolbarActions"] [data-testid="stToolbarActionButton"]:has([data-testid="stToolbarActionButtonIcon"]):not(:has([data-testid="stToolbarActionButtonLabel"])) {
+        display: none !important;
+    }
     .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
     div[data-testid="stVerticalBlock"] { gap: 0px !important; }
     .element-container { margin-bottom: 0px !important; }
@@ -480,10 +485,9 @@ with st.sidebar:
         gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
     
     st.divider()
-    date_option = st.radio("📅 표시 날짜 선택", ["어제 (-1일)", "오늘", "내일 (+1일)"], index=1)
+    date_option = st.radio("📅 표시 날짜 선택", ["오늘", "내일 (+1일)"], index=0)
     
-    if date_option == "어제 (-1일)": target_date = now_kst_time - timedelta(days=1)
-    elif date_option == "내일 (+1일)": target_date = now_kst_time + timedelta(days=1)
+    if date_option == "내일 (+1일)": target_date = now_kst_time + timedelta(days=1)
     else: target_date = now_kst_time
         
     display_date_str = target_date.strftime("%Y년 %m월 %d일")
