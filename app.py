@@ -458,12 +458,14 @@ if not emergency_mode:
         .lock-box .t { font-weight:700; color:#9a3412; font-size:14px; }
         .lock-box .s { font-size:13px; color:#7c2d12; margin-top:4px; }
         .unlock-box { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:4px 0 18px 0; font-size:14px; color:#065f46; font-weight:600; }
-        .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
+        .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:26px; }
         .reg-box .h { font-weight:700; color:#1E3A8A; font-size:14px; margin-bottom:8px; }
         .reg-box .f { font-size:13px; margin:0 0 5px 8px; color:#1f2937; word-break:break-all; }
         .reg-box .none { font-size:13px; color:#6b7280; }
-        .link-h { font-weight:700; font-size:17px; margin:30px 0 8px 0; padding-top:14px; border-top:1px solid #e6e6eb; color:#31333f; }
+        .link-h { font-weight:700; font-size:17px; margin:30px 0 0 0; padding:14px 0 24px 0; border-top:1px solid #e6e6eb; color:#31333f; }
         div[data-testid="stFileUploader"] { margin-bottom:10px; }
+        div[data-testid="stLinkButton"] { margin-bottom:10px; }
+        .hint { font-size:13px; color:#6b7280; margin:2px 0 26px 2px; line-height:1.5; }
         @media (max-width: 640px) { .st-cards { grid-template-columns:1fr; } }
         </style>
     """, unsafe_allow_html=True)
@@ -611,15 +613,20 @@ if not emergency_mode:
         else:
             st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div><div class='none'>아직 등록된 파일이 없습니다.</div></div>", unsafe_allow_html=True)
 
+        # 4. 내일 게이트 확인 (실시간 잡지로 이동만 함, 실시간 잡지 코드는 건드리지 않음)
+        st.markdown("<div class='step-h'><span class='num'>4</span>내일 게이트 확인</div>", unsafe_allow_html=True)
+        st.link_button("🛫 실시간 잡지에서 내일 게이트 보기", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
+        st.markdown("<div class='hint'>새 탭에서 실시간 잡지가 열리면, 왼쪽 메뉴의 <b>'확인할 게이트 날짜 선택'</b>에서 <b>내일</b>을 눌러주세요.</div>", unsafe_allow_html=True)
+
         # 바로가기
         st.markdown("<div class='link-h'>🔗 바로가기</div>", unsafe_allow_html=True)
         l1, l2 = st.columns(2)
-        with l1: st.link_button("🔄 실시간 잡지", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
-        with l2: st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        l3, l4 = st.columns(2)
-        with l3: st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
-        with l4: st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+        with l1:
+            st.link_button("🔄 실시간 잡지", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
+            st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
+        with l2:
+            st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
+            st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
 
 # --- [메인: 비상용 잡지 화면 (게이트 파일을 올렸을 때만)] ---
 else:
