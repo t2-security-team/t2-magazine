@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 import io
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 # 1. 페이지 설정
@@ -261,6 +262,148 @@ def smart_read(file):
     df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     return df
      
+# --- [DL 환승객 표 사진 읽기] ---
+# 사진 읽기 프로그램(tesseract)이 없거나 실패해도 사이트는 그대로 동작하고, 표에 직접 입력하면 됨
+try:
+    import pytesseract
+    from PIL import Image, ImageOps, ImageFilter
+    OCR_AVAILABLE = True
+except Exception:
+    OCR_AVAILABLE = False
+
+IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+DL_COLS = ['편명', '환승객', '총 예약자', '비율(%)']
+
+def is_image_file(f):
+    return f.name.lower().endswith(IMAGE_EXTS)
+
+# (맞출 너비, 흑백처리, 읽기모드) — 첫 방식에서 검증을 통과하면 바로 끝남
+OCR_VARIANTS = [(1760, None, 11), (1760, 200, 6), (2640, 170, 6), (2640, 200, 6),
+                (1760, None, 6), (2640, None, 11), (1300, None, 11), (1760, "sharp", 11)]
+
+def _ocr_read_once(img, psm):
+    d = pytesseract.image_to_data(img, lang="eng", config=f"--psm {psm}", output_type=pytesseract.Output.DICT)
+    words = []
+    for i, t in enumerate(d["text"]):
+        t = str(t).strip()
+        if not t: continue
+        words.append((t, d["left"][i] + d["width"][i] / 2, d["top"][i] + d["height"][i] / 2, d["height"][i]))
+
+    # 1) 편명(DLxxx) 열 위치 찾기
+    flights = []
+    for t, x, y, hh in words:
+        m = re.search(r"D[L1I|]\s*([0-9OQD]{2,4})", t.upper())
+        if m:
+            digits = re.sub(r"[OQD]", "0", m.group(1))  # 숫자 0을 글자 O로 읽는 경우 보정
+            fn = f"DL{int(digits):03d}"
+            if fn not in [f[0] for f in flights]:
+                flights.append((fn, x, y))
+    flights.sort(key=lambda f: f[1])
+    if not flights:
+        return [], None, ["사진에서 DL 편명을 찾지 못했습니다."]
+
+    # 2) 숫자들을 줄(높이)별로 묶기
+    nums = sorted([(t.replace(",", ""), x, y, hh) for t, x, y, hh in words
+                   if re.fullmatch(r"\d+(\.\d+)?%?", t.replace(",", ""))], key=lambda n: n[2])
+    rows, cur = [], []
+    for n in nums:
+        if cur and abs(n[2] - cur[-1][2]) > max(n[3], cur[-1][3]) * 0.8:
+            rows.append(cur); cur = []
+        cur.append(n)
+    if cur: rows.append(cur)
+    fy = sum(f[2] for f in flights) / len(flights)
+    rows = [r for r in rows if sum(n[2] for n in r) / len(r) > fy + 10 and len(r) >= len(flights)]
+    pct_rows = [r for r in rows if sum(1 for n in r if n[0].endswith("%")) >= len(flights) // 2 + 1]
+    int_rows = [r for r in rows if r not in pct_rows]
+    if len(int_rows) < 2:
+        return [], None, ["사진에서 총 예약자·환승객 숫자 줄을 찾지 못했습니다."]
+    total_row, ts_row = int_rows[0], int_rows[1]
+    pct_row = pct_rows[0] if pct_rows else None
+
+    def near(row, fx):
+        return min(row, key=lambda n: abs(n[1] - fx))[0]
+
+    out, problems = [], []
+    for fn, fx, _ in flights:
+        try:
+            ts = int(float(near(ts_row, fx))); tot = int(float(near(total_row, fx)))
+        except Exception:
+            problems.append(f"{fn}: 숫자 인식 실패"); continue
+        pct = None
+        if pct_row:
+            try: pct = float(near(pct_row, fx).rstrip("%"))
+            except Exception: pct = None
+        if pct is None or tot <= 0 or abs(ts / tot * 100 - pct) >= 0.15:
+            problems.append(f"{fn}: 비율 불일치")
+        out.append({'편명': fn, '환승객': ts, '총 예약자': tot, '비율(%)': pct})
+
+    # TTL = 환승객 줄에서 마지막 편명보다 오른쪽에 있는 숫자
+    ttl = None
+    right = [n for n in ts_row if n[1] > flights[-1][1] + 20]
+    if right:
+        try: ttl = int(float(max(right, key=lambda n: n[1])[0]))
+        except Exception: ttl = None
+    if ttl is None or ttl != sum(o['환승객'] for o in out):
+        problems.append("TTL 불일치")
+    return out, ttl, problems
+
+@st.cache_data(show_spinner=False, max_entries=20)
+def read_dl_photo(img_bytes):
+    """사진 → (읽은 줄 목록, TTL, 문제 목록). 같은 사진은 다시 읽지 않음"""
+    if not OCR_AVAILABLE:
+        return [], None, ["이 사이트에서는 사진 자동 읽기를 쓸 수 없습니다. 아래 표에 사진을 보고 직접 입력해 주세요."]
+    try:
+        base = ImageOps.grayscale(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+    except Exception:
+        return [], None, ["사진 파일을 열 수 없습니다. 아래 표에 직접 입력해 주세요."]
+    best = None
+    for width, mode, psm in OCR_VARIANTS:
+        try:
+            w, h = base.size
+            s = width / max(w, 1)  # 사진 크기와 상관없이 일정한 너비로 맞춤
+            im = base.resize((max(1, int(w * s)), max(1, int(h * s))), Image.LANCZOS)
+            if mode == "sharp": im = im.filter(ImageFilter.SHARPEN).filter(ImageFilter.SHARPEN)
+            elif mode: im = im.point(lambda p, thr=mode: 255 if p > thr else 0)
+            im = ImageOps.expand(im, border=40, fill=255)
+            out, ttl, prob = _ocr_read_once(im, psm)
+        except Exception:
+            continue
+        if out and not prob:
+            return out, ttl, []
+        if out and (best is None or len(prob) < len(best[2])):
+            best = (out, ttl, prob)
+    if best:
+        return best
+    return [], None, ["사진에서 DL 표를 읽지 못했습니다. 아래 표에 사진을 보고 직접 입력해 주세요."]
+
+def check_dl_rows(df, ttl):
+    """확인 표 검사: 각 편 환승객÷총예약자=비율, 환승객 합계=TTL. (저장할 줄, 문제 목록)"""
+    clean, problems = [], []
+    for _, r in df.iterrows():
+        fn = clean_flight_no(r.get('편명'))
+        if not fn or fn == "NAN": continue
+        ts = pd.to_numeric(r.get('환승객'), errors='coerce')
+        if pd.isna(ts):
+            problems.append(f"{fn}: 환승객 숫자를 입력해 주세요"); continue
+        ts = int(round(ts))
+        tot = pd.to_numeric(r.get('총 예약자'), errors='coerce')
+        pct = pd.to_numeric(r.get('비율(%)'), errors='coerce')
+        if not pd.isna(tot) and not pd.isna(pct):
+            if tot <= 0 or abs(ts / tot * 100 - pct) >= 0.15:
+                calc = f"{ts / tot * 100:.1f}%" if tot > 0 else "계산 불가"
+                problems.append(f"{fn}: 환승객 {ts} ÷ 총 예약자 {int(tot)} = {calc} → 표의 비율 {pct:g}%와 다름")
+        clean.append({'편명': fn, '승객수': ts})
+    if not clean:
+        problems.append("편명과 환승객을 한 줄 이상 입력해 주세요")
+    total = sum(c['승객수'] for c in clean)
+    if not ttl:
+        problems.append("표 맨 오른쪽 TTL(환승객 합계)을 입력해 주세요")
+    elif total != int(ttl):
+        problems.append(f"환승객 합계 {total:,}명 → 표의 TTL {int(ttl):,}명과 다름")
+    if len({c['편명'] for c in clean}) != len(clean):
+        problems.append("같은 편명이 두 번 들어가 있습니다")
+    return clean, problems
+
 def parse_dl_pax(df):
     if df is None or df.empty: return None
     all_rows = [df.columns.tolist()] + df.values.tolist()
@@ -465,6 +608,11 @@ if not emergency_mode:
         .link-h { font-weight:700; font-size:17px; margin:30px 0 0 0; padding:14px 0 24px 0; border-top:1px solid #e6e6eb; color:#31333f; }
         div[data-testid="stFileUploader"] { margin-bottom:10px; }
         div[data-testid="stLinkButton"] { margin-bottom:10px; }
+        .photo-h { font-weight:700; font-size:15px; margin:14px 0 0 0; padding-bottom:20px; color:#1E3A8A; }
+        .photo-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:6px; }
+        .photo-ok { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:4px 0 22px 0; font-size:14px; color:#065f46; font-weight:600; }
+        .photo-bad { background:#fff1f2; border:1px solid #fda4af; border-radius:8px; padding:10px 14px; margin:4px 0 22px 0; font-size:14px; color:#9f1239; }
+        .photo-bad ul { margin:6px 0 0 0; padding-left:20px; font-size:13px; }
         .hint { font-size:13px; color:#6b7280; margin:2px 0 26px 2px; line-height:1.5; }
         @media (max-width: 640px) { .st-cards { grid-template-columns:1fr; } }
         </style>
@@ -517,7 +665,7 @@ if not emergency_mode:
         is_upload_locked = False
 
         # 2. 파일 올리기
-        st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · 여러 개 가능</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · DL 사진(.png .jpg) · 여러 개 가능</span></div>", unsafe_allow_html=True)
         if is_today:
             st.markdown("<div class='lock-box'><div class='t'>🔒 오늘 데이터는 잠겨 있습니다</div><div class='s'>실시간 잡지에 표시 중인 데이터라, 올리거나 고치려면 관리자 비밀번호가 필요합니다.</div></div>", unsafe_allow_html=True)
             upload_pw = st.text_input("관리자 비밀번호", type="password", placeholder="비밀번호 4자리", key="upload_pw", label_visibility="collapsed")
@@ -536,18 +684,74 @@ if not emergency_mode:
             label_visibility="collapsed"
         )
 
+        # 📷 DL 사진: 읽은 결과를 표로 보여주고, 매니저가 확인·수정 (검증 통과해야 저장 가능)
+        dl_photo_results = {}
+        photo_problem = False
+        image_files = [f for f in (uploaded_pax_files or []) if is_image_file(f)]
+        for f in image_files:
+            img_bytes = f.getvalue()
+            hkey = hashlib.md5(img_bytes).hexdigest()[:10]
+            with st.spinner("📷 DL 사진을 읽는 중... (처음 한 번은 몇 초 걸려요)"):
+                rows, ttl, read_problems = read_dl_photo(img_bytes)
+
+            st.markdown(f"<div class='photo-h'>📷 {html.escape(f.name)} — 읽은 결과 <span class='sub'>사진과 다르면 표 칸을 눌러 직접 고치세요</span></div>", unsafe_allow_html=True)
+            st.image(img_bytes)
+
+            if rows:
+                base_df = pd.DataFrame(rows, columns=DL_COLS)
+            else:
+                base_df = pd.DataFrame({'편명': [''] * 6, '환승객': [None] * 6, '총 예약자': [None] * 6, '비율(%)': [None] * 6})
+                for msg in read_problems:
+                    st.markdown(f"<div class='photo-bad'>⚠ {html.escape(msg)}</div>", unsafe_allow_html=True)
+            for c in ['환승객', '총 예약자', '비율(%)']:
+                base_df[c] = pd.to_numeric(base_df[c], errors='coerce').astype('float')
+
+            ver = st.session_state.get('uploader_ver', 0)
+            edited = st.data_editor(
+                base_df,
+                key=f"dl_edit_{ver}_{hkey}",
+                hide_index=True,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    '편명': st.column_config.TextColumn('편명'),
+                    '환승객': st.column_config.NumberColumn('환승객', format="%d", min_value=0, step=1),
+                    '총 예약자': st.column_config.NumberColumn('총 예약자', format="%d", min_value=0, step=1),
+                    '비율(%)': st.column_config.NumberColumn('환승객 비율(%)', format="%.1f", min_value=0.0, max_value=100.0, step=0.1),
+                },
+            )
+            ttl_in = st.number_input(
+                "표 맨 오른쪽 TTL (환승객 합계)",
+                min_value=0, step=1,
+                value=int(ttl) if ttl else 0,
+                key=f"dl_ttl_{ver}_{hkey}",
+            )
+            clean, problems = check_dl_rows(edited, ttl_in)
+            if problems:
+                photo_problem = True
+                items = "".join([f"<li>{html.escape(p)}</li>" for p in problems])
+                st.markdown(f"<div class='photo-bad'>❌ <b>숫자가 맞지 않습니다. 사진을 보고 고쳐주세요.</b><ul>{items}</ul></div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='photo-ok'>✅ DL {len(clean)}편 · 환승객 합계 {sum(c['승객수'] for c in clean):,}명 — 표의 비율·TTL과 모두 일치합니다</div>", unsafe_allow_html=True)
+            dl_photo_results[f.name] = clean
+
+        if photo_problem:
+            st.markdown("<div class='photo-bad'>💾 사진 결과에 빨간 표시가 남아 있어 아직 저장할 수 없습니다.</div>", unsafe_allow_html=True)
+
+
         save_clicked = st.button(
             f"💾 {target_word}({target_label}) 데이터로 저장",
             type="primary",
             use_container_width=True,
-            disabled=(not uploaded_pax_files) or is_upload_locked
+            disabled=(not uploaded_pax_files) or is_upload_locked or photo_problem
         )
 
-        if save_clicked and uploaded_pax_files and not is_upload_locked:
+        if save_clicked and uploaded_pax_files and not is_upload_locked and not photo_problem:
             with st.spinner(f"📤 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
                 for f in uploaded_pax_files:
+                    if is_image_file(f): continue  # 사진은 아래에서 확인 표 값으로 저장
                     df = smart_read(f)
                     if df is not None:
                         dl_df = parse_dl_pax(df)
@@ -565,6 +769,12 @@ if not emergency_mode:
                                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                                 p_temp.append(tmp)
                                 new_file_names.append(f.name)
+
+                # 📷 DL 사진: 매니저가 확인한 표 값(편명·환승객)을 저장
+                for fname, clean in dl_photo_results.items():
+                    if clean:
+                        p_temp.append(pd.DataFrame(clean))
+                        new_file_names.append(fname)
 
                 upload_ok = False
                 if p_temp:
