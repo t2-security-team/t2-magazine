@@ -441,11 +441,10 @@ if not emergency_mode:
         .st-card .n { margin-top:8px; font-size:14px; color:#6b7280; }
         .st-card .n b { color:#1E3A8A; font-size:18px; }
         .st-card .n.empty b { color:#9ca3af; }
-        .step-h { font-weight:700; font-size:17px; margin:22px 0 8px 0; color:#31333f; display:flex; align-items:center; }
+        .step-h { font-weight:700; font-size:17px; line-height:1.6; margin:22px 0 0 0; padding-bottom:22px; color:#31333f; display:flex; align-items:center; flex-wrap:wrap; }
         .step-h .num { display:inline-flex; width:24px; height:24px; border-radius:50%; background:#31333f; color:#fff; font-size:13px; align-items:center; justify-content:center; margin-right:8px; flex-shrink:0; }
         .step-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:8px; }
-        .note-info { margin:6px 0 4px 0; background:#e8f1fd; padding:10px 14px; border-radius:6px; font-size:14px; color:#1e3a8a; }
-        .note-warn { margin:6px 0 4px 0; background:#ffecec; border-left:4px solid #ff4b4b; padding:10px 14px; border-radius:6px; font-size:14px; color:#7f1d1d; }
+        .note-warn { margin:6px 0 22px 0; background:#ffecec; border-left:4px solid #ff4b4b; padding:10px 14px; border-radius:6px; font-size:14px; color:#7f1d1d; }
         .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
         .reg-box .h { font-weight:700; color:#1E3A8A; font-size:14px; margin-bottom:8px; }
         .reg-box .f { font-size:13px; margin:0 0 5px 8px; color:#1f2937; word-break:break-all; }
@@ -496,8 +495,6 @@ if not emergency_mode:
 
         if is_today:
             st.markdown("<div class='note-warn'>⚠ <b>오늘 데이터는 지금 실시간 잡지에 표시 중입니다.</b> 내일 파일을 여기에 올리면 실시간 잡지 승객수가 바뀝니다.</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='note-info'>ℹ 저녁~밤에는 보통 <b>내일</b> 파일을 올립니다. 미리 올려도 자정 전까지 실시간 잡지는 오늘 데이터를 그대로 보여줍니다.</div>", unsafe_allow_html=True)
 
         saved_files = today_files if is_today else tom_files
         saved_pax_df = today_pax if is_today else tom_pax
@@ -593,9 +590,11 @@ if not emergency_mode:
 
         # 바로가기
         st.markdown("<div class='link-h'>🔗 바로가기</div>", unsafe_allow_html=True)
-        l1, l2, l3, l4 = st.columns(4)
+        l1, l2 = st.columns(2)
         with l1: st.link_button("🔄 실시간 잡지", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
         with l2: st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        l3, l4 = st.columns(2)
         with l3: st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
         with l4: st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
 
