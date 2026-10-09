@@ -825,8 +825,8 @@ if not emergency_mode:
 
         # 4. 내일 게이트 확인 (실시간 잡지로 이동만 함, 실시간 잡지 코드는 건드리지 않음)
         st.markdown("<div class='step-h'><span class='num'>4</span>내일 게이트 확인</div>", unsafe_allow_html=True)
-        st.link_button("🛫 실시간 잡지에서 내일 게이트 보기", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
-        st.markdown("<div class='hint'>새 탭에서 실시간 잡지가 열리면, 왼쪽 메뉴의 <b>'확인할 게이트 날짜 선택'</b>에서 <b>내일</b>을 눌러주세요.</div>", unsafe_allow_html=True)
+        st.link_button("🛫 실시간 잡지에서 내일 게이트 보기", "https://live-magazine-t2.streamlit.app/?date=tomorrow", use_container_width=True)
+        st.markdown("<div class='hint'>누르면 실시간 잡지가 새 탭에서 <b>내일 게이트</b>로 바로 열립니다.</div>", unsafe_allow_html=True)
 
         # 바로가기
         st.markdown("<div class='link-h'>🔗 바로가기</div>", unsafe_allow_html=True)
