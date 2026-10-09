@@ -8,7 +8,7 @@ import io
 from datetime import datetime, timedelta, timezone
 
 # 1. 페이지 설정
-st.set_page_config(page_title="T2 보안검색 환승부 잡지", layout="wide")
+st.set_page_config(page_title="T2 승객 수 파일 저장", layout="wide", initial_sidebar_state="collapsed")
 
 # KST(한국시간) 기준 날짜 세팅
 KST = timezone(timedelta(hours=9))
@@ -369,49 +369,161 @@ def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_siz
         html += '</tr>'
     return html + '</tbody></table></div>'
      
-# --- [사이드바 설정] ---
-with st.sidebar:
-    st.header("🔗 빠른 사이트 이동")
-    st.link_button("✈ 인천공항 도착편 조회", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
-    st.link_button("📧 네이버 메일함 열기", "https://mail.naver.com", use_container_width=True)
-    st.link_button("⏪ 이전 버전으로 이동", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
-    st.link_button("🔄 실시간 연동 버전으로 이동", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
-    st.divider()
-    
-    st.header("📂 데이터 업로드")
-    
-    today_ui_str = f"오늘 ({now_kst_time.month}월 {now_kst_time.day}일)"
-    tomorrow_ui_str = f"내일 ({(now_kst_time + timedelta(days=1)).month}월 {(now_kst_time + timedelta(days=1)).day}일)"
-    
-    upload_target = st.radio("📅 업로드할 데이터 날짜", [today_ui_str, tomorrow_ui_str], index=1, horizontal=True)
-    target_date_str = today_date_str if "오늘" in upload_target else tomorrow_date_str
-    
-    full_files_df = load_file_list()
-    if not full_files_df.empty:
-        saved_files = full_files_df[full_files_df['조회일자'] == target_date_str]['파일명'].tolist()
+# --- [날짜별 등록 현황] ---
+full_files_df = load_file_list()
+full_pax_df = load_pax_data()
+
+tomorrow_kst = now_kst_time + timedelta(days=1)
+today_label = f"{now_kst_time.month}월 {now_kst_time.day}일"
+tomorrow_label = f"{tomorrow_kst.month}월 {tomorrow_kst.day}일"
+
+def get_date_status(date_str):
+    if not full_files_df.empty and '파일명' in full_files_df.columns:
+        files = full_files_df[full_files_df['조회일자'] == date_str]['파일명'].tolist()
     else:
-        saved_files = []
-        
-    full_pax_df = load_pax_data()
+        files = []
     if not full_pax_df.empty:
-        saved_pax_df = full_pax_df[full_pax_df['조회일자'] == target_date_str]
+        pax = full_pax_df[full_pax_df['조회일자'] == date_str].copy()
     else:
-        saved_pax_df = pd.DataFrame()
-    
-    is_upload_locked = len(saved_files) >= 3
-    
-    if is_upload_locked:
-        st.error(f"🚨 **업로드 제한됨**\n\n해당 날짜에 이미 3개의 파일이 등록되어 있습니다. 아래의 데이터 비우기 버튼을 먼저 눌러주세요.")
-    
-    uploaded_pax_files = st.file_uploader(
-        "1. 승객수 파일 (.xls, .xlsx, .csv)", 
-        accept_multiple_files=True, 
-        key="pax_uploader",
-        disabled=is_upload_locked
-    )
-    
-    if uploaded_pax_files and not is_upload_locked:
-        if st.button("💾 파일 저장", use_container_width=True):
+        pax = pd.DataFrame()
+    flights = len(pax)
+    total = 0
+    if flights and '승객수' in pax.columns:
+        total = int(pd.to_numeric(pax['승객수'].astype(str).str.replace(',', '').str.strip(), errors='coerce').fillna(0).sum())
+    return files, pax, flights, total
+
+# --- [사이드바: 비상용 잡지 기능] ---
+with st.sidebar:
+    st.header("🚨 비상용 잡지 보기")
+    st.caption("게이트 서버 장애 시에만 사용합니다. 게이트 파일을 올리면 가운데 화면이 잡지 표로 바뀌고, 파일을 지우면 다시 파일 저장 화면으로 돌아옵니다.")
+    gate_files = st.file_uploader("게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True, key="gate_uploader")
+
+    st.divider()
+    date_option = st.radio("📅 표시 날짜 선택", ["오늘", "내일 (+1일)"], index=0)
+
+    if date_option == "내일 (+1일)": target_date = now_kst_time + timedelta(days=1)
+    else: target_date = now_kst_time
+
+    display_date_str = target_date.strftime("%Y년 %m월 %d일")
+
+    st.divider()
+    route_option = st.radio("🌍 출발지 표기 방식", ["한글+영어 (혼합)", "한글 (도시명)", "영어 (쓰리코드)"], index=0)
+    st.divider()
+    vis_option = st.radio("🎨 시각화 옵션", ["적용 안 함", "1. ✈ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)", "2. ⏰ 첨두시간 색상 표시 (16~18시)"], index=0)
+    opt_airline = (vis_option == "1. ✈ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
+    opt_peak = (vis_option == "2. ⏰ 첨두시간 색상 표시 (16~18시)")
+    st.divider()
+    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
+    st.divider()
+    base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
+
+st.markdown(f"""
+    <style>
+    .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
+    .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
+    </style>
+""", unsafe_allow_html=True)
+
+emergency_mode = bool(gate_files)
+
+# --- [메인: 파일 저장 화면] ---
+if not emergency_mode:
+    st.markdown("""
+        <style>
+        .pg-title { text-align:center; font-size:30px; font-weight:700; margin:48px 0 4px 0; color:#31333f; }
+        .pg-lead { text-align:center; color:#6b7280; font-size:15px; margin:0 0 24px 0; }
+        .st-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:8px; }
+        .st-card { border:1px solid #e6e6eb; border-radius:10px; padding:14px 16px; background:#fff; }
+        .st-card .d { font-weight:700; font-size:16px; color:#31333f; }
+        .st-card .tag { display:inline-block; font-size:12px; padding:2px 8px; border-radius:20px; margin-left:6px; font-weight:600; vertical-align:2px; }
+        .tag-live { background:#fde8e8; color:#b91c1c; }
+        .tag-wait { background:#eef2ff; color:#3730a3; }
+        .st-card .n { margin-top:8px; font-size:14px; color:#6b7280; }
+        .st-card .n b { color:#1E3A8A; font-size:18px; }
+        .st-card .n.empty b { color:#9ca3af; }
+        .step-h { font-weight:700; font-size:17px; margin:22px 0 8px 0; color:#31333f; display:flex; align-items:center; }
+        .step-h .num { display:inline-flex; width:24px; height:24px; border-radius:50%; background:#31333f; color:#fff; font-size:13px; align-items:center; justify-content:center; margin-right:8px; flex-shrink:0; }
+        .step-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:8px; }
+        .note-info { margin:6px 0 4px 0; background:#e8f1fd; padding:10px 14px; border-radius:6px; font-size:14px; color:#1e3a8a; }
+        .note-warn { margin:6px 0 4px 0; background:#ffecec; border-left:4px solid #ff4b4b; padding:10px 14px; border-radius:6px; font-size:14px; color:#7f1d1d; }
+        .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
+        .reg-box .h { font-weight:700; color:#1E3A8A; font-size:14px; margin-bottom:8px; }
+        .reg-box .f { font-size:13px; margin:0 0 5px 8px; color:#1f2937; word-break:break-all; }
+        .reg-box .none { font-size:13px; color:#6b7280; }
+        .link-h { font-weight:700; font-size:17px; margin:30px 0 8px 0; padding-top:14px; border-top:1px solid #e6e6eb; color:#31333f; }
+        div[data-testid="stFileUploader"] { margin-bottom:10px; }
+        @media (max-width: 640px) { .st-cards { grid-template-columns:1fr; } }
+        </style>
+    """, unsafe_allow_html=True)
+
+    _left, center, _right = st.columns([1, 2.4, 1])
+    with center:
+        st.markdown("<div class='pg-title'>💾 승객 수 파일 저장</div>", unsafe_allow_html=True)
+        st.markdown("<div class='pg-lead'>T2 보안검색 환승부 · 실시간 잡지에 쓰일 승객수 파일을 등록합니다</div>", unsafe_allow_html=True)
+
+        today_files, today_pax, today_flights, today_total = get_date_status(today_date_str)
+        tom_files, tom_pax, tom_flights, tom_total = get_date_status(tomorrow_date_str)
+
+        def status_line(files, flights, total):
+            if flights == 0:
+                return "<div class='n empty'><b>아직 등록된 파일 없음</b></div>"
+            return f"<div class='n'>파일 <b>{len(files)}</b>개 · <b>{flights:,}</b>편 · 총 <b>{total:,}</b>명</div>"
+
+        st.markdown(f"""
+            <div class='st-cards'>
+                <div class='st-card'>
+                    <div class='d'>오늘 {today_label} <span class='tag tag-live'>실시간 잡지 표시 중</span></div>
+                    {status_line(today_files, today_flights, today_total)}
+                </div>
+                <div class='st-card'>
+                    <div class='d'>내일 {tomorrow_label} <span class='tag tag-wait'>등록 대기</span></div>
+                    {status_line(tom_files, tom_flights, tom_total)}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # 1. 날짜 선택
+        st.markdown("<div class='step-h'><span class='num'>1</span>어느 날짜 데이터를 올리나요?</div>", unsafe_allow_html=True)
+        upload_target = st.radio(
+            "업로드할 데이터 날짜",
+            [f"내일 ({tomorrow_label})", f"오늘 ({today_label})"],
+            index=0, horizontal=True, label_visibility="collapsed", key="upload_target"
+        )
+        is_today = upload_target.startswith("오늘")
+        target_date_str = today_date_str if is_today else tomorrow_date_str
+        target_word = "오늘" if is_today else "내일"
+        target_label = today_label if is_today else tomorrow_label
+
+        if is_today:
+            st.markdown("<div class='note-warn'>⚠ <b>오늘 데이터는 지금 실시간 잡지에 표시 중입니다.</b> 내일 파일을 여기에 올리면 실시간 잡지 승객수가 바뀝니다.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='note-info'>ℹ 저녁~밤에는 보통 <b>내일</b> 파일을 올립니다. 미리 올려도 자정 전까지 실시간 잡지는 오늘 데이터를 그대로 보여줍니다.</div>", unsafe_allow_html=True)
+
+        saved_files = today_files if is_today else tom_files
+        saved_pax_df = today_pax if is_today else tom_pax
+        is_upload_locked = len(saved_files) >= 3
+
+        # 2. 파일 올리기
+        st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · 여러 개 가능 (날짜당 최대 3개)</span></div>", unsafe_allow_html=True)
+        if is_upload_locked:
+            st.error(f"🚨 **업로드 제한됨**\n\n{target_word}({target_label})에 이미 3개의 파일이 등록되어 있습니다. 아래 3번에서 데이터를 먼저 비워주세요.")
+
+        uploaded_pax_files = st.file_uploader(
+            "승객수 파일 (.xls, .xlsx, .csv)",
+            accept_multiple_files=True,
+            key="pax_uploader",
+            disabled=is_upload_locked,
+            label_visibility="collapsed"
+        )
+
+        save_clicked = st.button(
+            f"💾 {target_word}({target_label}) 데이터로 저장",
+            type="primary",
+            use_container_width=True,
+            disabled=(not uploaded_pax_files) or is_upload_locked
+        )
+
+        if save_clicked and uploaded_pax_files and not is_upload_locked:
             with st.spinner(f"📤 파일을 처리하고 저장하는 중..."):
                 p_temp = []
                 new_file_names = []
@@ -433,271 +545,231 @@ with st.sidebar:
                                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
                                 p_temp.append(tmp)
                                 new_file_names.append(f.name)
-                
+
                 upload_ok = False
                 if p_temp:
                     combined_df = pd.concat(p_temp).drop_duplicates('편명')
                     upload_ok = update_pax_data(combined_df, target_date_str)
                     if upload_ok:
                         update_file_list(new_file_names, target_date_str)
-            
+
             if upload_ok:
-                st.session_state["toast_msg"] = f"{upload_target} 데이터 저장 완료!"
+                st.session_state["toast_msg"] = f"{target_word}({target_label}) 데이터 저장 완료!"
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
             st.rerun()
-     
-    if not saved_pax_df.empty:
-        st.markdown("<div class='file-box'>", unsafe_allow_html=True)
-        st.markdown(f"<p class='file-box-title'>✅ 현재 적용중인 데이터</p>", unsafe_allow_html=True)
-        
-        if saved_files:
-            for fname in saved_files:
-                st.markdown(f"<p class='file-item'>• {fname}</p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<p class='file-item'>• 데이터 적용 완료</p>", unsafe_allow_html=True)
-            
-        # ⭐ [강력 패치] 관리자용 비밀번호 잠금 기능 탑재!
-        if "오늘" in upload_target:
-            with st.expander("🚨 오늘 데이터 강제 비우기 (관리자용)"):
-                st.markdown("<span style='font-size:12px; color:gray;'>실시간 잡지 표출에 문제가 생길 수 있으므로 가급적 지우지 마세요.</span>", unsafe_allow_html=True)
-                
-                # 비밀번호 입력창
-                admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리")
-                
-                # 🔑 여기에 원하는 비밀번호를 세팅하세요! (현재는 "0000")
-                if admin_pw == "0000":  
-                    if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
-                        clear_date_data(target_date_str)
-                        st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
-                        st.rerun()
-                elif admin_pw != "":
-                    st.error("비밀번호가 일치하지 않습니다.")
-        else:
-            if st.button(f"🗑 데이터 비우기", use_container_width=True):
-                clear_date_data(target_date_str)
-                st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
-                st.rerun()
-                
-        st.markdown("</div>", unsafe_allow_html=True)
-     
-    with st.expander("🚨 수동 게이트 업로드 (게이트 서버 장애시에만 사용)"):
-        gate_files = st.file_uploader("2. 게이트 파일 (.xls, .xlsx, .csv)", accept_multiple_files=True)
-    
-    st.divider()
-    date_option = st.radio("📅 표시 날짜 선택", ["오늘", "내일 (+1일)"], index=0)
-    
-    if date_option == "내일 (+1일)": target_date = now_kst_time + timedelta(days=1)
-    else: target_date = now_kst_time
-        
-    display_date_str = target_date.strftime("%Y년 %m월 %d일")
-    
-    st.divider()
-    route_option = st.radio("🌍 출발지 표기 방식", ["한글+영어 (혼합)", "한글 (도시명)", "영어 (쓰리코드)"], index=0)
-    st.divider()
-    vis_option = st.radio("🎨 시각화 옵션", ["적용 안 함", "1. ✈ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)", "2. ⏰ 첨두시간 색상 표시 (16~18시)"], index=0)
-    opt_airline = (vis_option == "1. ✈ 항공사별 색상 표시 (DL:연하늘, OZ:연분홍)")
-    opt_peak = (vis_option == "2. ⏰ 첨두시간 색상 표시 (16~18시)")
-    st.divider()
-    time_range = st.slider("조회 시간대 (시)", 0, 24, (0, 24))
-    st.divider()
-    base_font_size = st.slider("🔠 표 글자 크기 조절 (px)", min_value=10, max_value=17, value=12, step=1)
-     
-st.markdown(f"""
-    <style>
-    .merged-table, .merged-table th, .merged-table td {{ font-size: {base_font_size}px !important; font-weight: bold !important; }}
-    .sum-cell {{ font-size: {base_font_size + 1}px !important; font-weight: bold !important; }}
-    </style>
-""", unsafe_allow_html=True)
-     
-# --- [메인 로직] ---
-p_all, g_all = [], []
-     
-if not saved_pax_df.empty:
-    if '출발지' in saved_pax_df.columns:
-        saved_pax_df['출발지'] = saved_pax_df['출발지'].apply(lambda x: format_route(x, route_option))
-    p_all.append(saved_pax_df)
-     
-for f in gate_files:
-    df = smart_read(f)
-    if df is not None:
-        f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
-        g_c = find_col(df, ['GN', 'GATE', '게이트', 'G/N'])
-        t_c = find_col(df, ['TIME', 'STA', '시간'])
-        r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
-        e_c = find_col(df, ['출구', '입국장', 'EXIT']) 
-        
-        if f_c and g_c and t_c:
-            cols_to_extract = [f_c, g_c, t_c]
-            col_names = ['편명', '게이트', '시간']
-            
-            if r_c:
-                cols_to_extract.append(r_c)
-                col_names.append('출발지')
-            if e_c: 
-                cols_to_extract.append(e_c)
-                col_names.append('출구')
-                
-            tmp = df[cols_to_extract].copy()
-            tmp.columns = col_names
-            
-            if r_c: tmp['출발지'] = tmp['출발지'].apply(lambda x: format_route(x, route_option))
-            tmp['편명'] = tmp['편명'].apply(clean_flight_no)
-            g_all.append(tmp)
-     
-if not (p_all and g_all):
-    st.markdown("<h2 style='text-align: center;'>✈ T2 보안검색 환승부 잡지 ✈</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #4B5563; margin-bottom: 30px;'>👋 환영합니다! 좌측 사이드바에서 데이터를 업로드하시거나, 아래 링크를 통해 원하시는 시스템으로 이동해 주세요.</p>", unsafe_allow_html=True)
-    
-    with st.expander("📢 시스템 이용 안내", expanded=True):
-        st.markdown("""
-        * **데이터 업로드**: 좌측 메뉴에서 **'내일'** 날짜를 선택한 후 내일자 승객수 파일을 올려주세요.
-        * **실시간 연동**: 내일 데이터를 미리 업로드해 두어도, 자정 전까지는 '실시간 잡지'에서 오늘의 데이터를 정상적으로 확인하실 수 있습니다.
-        """)
-        
-    st.divider()
-    st.markdown("### 🔗 빠른 시스템 이동")
-    
-    st.markdown("##### 🔄 실시간 잡지")
-    st.markdown("<span style='font-size: 13px; color: #6b7280;'>실시간 잡지.<br>&lt;첨두승객수 or 익일잡지&gt;</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://live-magazine-t2.streamlit.app/")
-    
-    st.markdown("<br>", unsafe_allow_html=True) # 요소 사이의 간격
-    
-    st.markdown("##### 💾 승객 수 파일저장")
-    st.markdown("<span style='font-size: 13px; color: #6b7280;'>항공사 승객수 파일을 저장하고 관리.</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://t2-pax-magazine.streamlit.app/")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.markdown("##### ⏪ 초기 버전")
-    st.markdown("<span style='font-size: 13px; color: #6b7280;'>과거에 사용하던 구형 잡지 버전입니다.</span>", unsafe_allow_html=True)
-    st.link_button("이동하기", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/")
 
+        # 3. 등록된 파일 확인
+        st.markdown("<div class='step-h'><span class='num'>3</span>등록된 파일 확인</div>", unsafe_allow_html=True)
+        if not saved_pax_df.empty:
+            if saved_files:
+                file_lines = "".join([f"<div class='f'>• {html.escape(str(fname))}</div>" for fname in saved_files])
+            else:
+                file_lines = "<div class='f'>• 데이터 적용 완료</div>"
+            st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div>{file_lines}</div>", unsafe_allow_html=True)
+
+            # 오늘 데이터는 실시간 잡지에 표시 중이므로 비밀번호 잠금, 내일 데이터는 바로 비우기
+            if is_today:
+                with st.expander("🚨 오늘 데이터 강제 비우기 (관리자용)"):
+                    st.markdown("<span style='font-size:12px; color:gray;'>실시간 잡지 표출에 문제가 생길 수 있으므로 가급적 지우지 마세요.</span>", unsafe_allow_html=True)
+
+                    admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리")
+
+                    # 🔑 관리자 비밀번호 (현재는 "0000")
+                    if admin_pw == "0000":
+                        if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
+                            clear_date_data(target_date_str)
+                            st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
+                            st.rerun()
+                    elif admin_pw != "":
+                        st.error("비밀번호가 일치하지 않습니다.")
+            else:
+                if st.button(f"🗑 내일({target_label}) 데이터 비우기", use_container_width=True):
+                    clear_date_data(target_date_str)
+                    st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+                    st.rerun()
+        else:
+            st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div><div class='none'>아직 등록된 파일이 없습니다.</div></div>", unsafe_allow_html=True)
+
+        # 바로가기
+        st.markdown("<div class='link-h'>🔗 바로가기</div>", unsafe_allow_html=True)
+        l1, l2, l3, l4 = st.columns(4)
+        with l1: st.link_button("🔄 실시간 잡지", "https://live-magazine-t2.streamlit.app/", use_container_width=True)
+        with l2: st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
+        with l3: st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
+        with l4: st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+
+# --- [메인: 비상용 잡지 화면 (게이트 파일을 올렸을 때만)] ---
 else:
-    df_p = pd.concat(p_all).drop_duplicates('편명')
-    df_g = pd.concat(g_all).drop_duplicates('편명')
-    final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
+    p_all, g_all = [], []
+
+    # 사이드바에서 고른 '표시 날짜'의 승객수 데이터를 사용
+    display_date_key = target_date.strftime("%Y-%m-%d")
+    if not full_pax_df.empty:
+        disp_pax_df = full_pax_df[full_pax_df['조회일자'] == display_date_key].copy()
+    else:
+        disp_pax_df = pd.DataFrame()
+
+    if not disp_pax_df.empty:
+        if '출발지' in disp_pax_df.columns:
+            disp_pax_df['출발지'] = disp_pax_df['출발지'].apply(lambda x: format_route(x, route_option))
+        p_all.append(disp_pax_df)
+
+    for f in gate_files:
+        df = smart_read(f)
+        if df is not None:
+            f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+            g_c = find_col(df, ['GN', 'GATE', '게이트', 'G/N'])
+            t_c = find_col(df, ['TIME', 'STA', '시간'])
+            r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+            e_c = find_col(df, ['출구', '입국장', 'EXIT'])
+
+            if f_c and g_c and t_c:
+                cols_to_extract = [f_c, g_c, t_c]
+                col_names = ['편명', '게이트', '시간']
+
+                if r_c:
+                    cols_to_extract.append(r_c)
+                    col_names.append('출발지')
+                if e_c:
+                    cols_to_extract.append(e_c)
+                    col_names.append('출구')
+
+                tmp = df[cols_to_extract].copy()
+                tmp.columns = col_names
+
+                if r_c: tmp['출발지'] = tmp['출발지'].apply(lambda x: format_route(x, route_option))
+                tmp['편명'] = tmp['편명'].apply(clean_flight_no)
+                g_all.append(tmp)
+
+    if not p_all:
+        st.warning(f"⚠ {display_date_str} 승객수 데이터가 없습니다. 왼쪽 메뉴의 '표시 날짜'를 확인하거나, 게이트 파일을 지우고 파일 저장 화면에서 승객수 파일을 먼저 등록해 주세요.")
+    elif not g_all:
+        st.warning("⚠ 게이트 파일에서 편명·게이트·시간 정보를 찾지 못했습니다. 파일을 확인해 주세요.")
+    else:
+        df_p = pd.concat(p_all).drop_duplicates('편명')
+        df_g = pd.concat(g_all).drop_duplicates('편명')
+        final = pd.merge(df_g, df_p, on='편명', how='inner', suffixes=('', '_p'))
     
-    if '출발지' in final.columns:
-        final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
+        if '출발지' in final.columns:
+            final = final[~final['출발지'].astype(str).str.contains('PUS|김해|부산', case=False, na=False)]
     
-    if not final.empty:
-        final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
+        if not final.empty:
+            final['p_val'] = pd.to_numeric(final['승객수'], errors='coerce').fillna(0).astype(int)
         
-        def format_pax_display(val):
-            if pd.isna(val) or str(val).strip() == '': return ""
-            try:
-                cleaned_val = str(val).replace(',', '').strip()
-                if cleaned_val == '': return ""
-                return f"{int(float(cleaned_val)):,}"
-            except: return ""
+            def format_pax_display(val):
+                if pd.isna(val) or str(val).strip() == '': return ""
+                try:
+                    cleaned_val = str(val).replace(',', '').strip()
+                    if cleaned_val == '': return ""
+                    return f"{int(float(cleaned_val)):,}"
+                except: return ""
                 
-        final['p_display'] = final['승객수'].apply(format_pax_display)
-        final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
-        final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
+            final['p_display'] = final['승객수'].apply(format_pax_display)
+            final['hour'] = final['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
+            final = final[(final['hour'] >= time_range[0]) & (final['hour'] <= time_range[1])]
         
-        if '출구' not in final.columns: final['출구'] = ""
-        final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
+            if '출구' not in final.columns: final['출구'] = ""
+            final['g_num'] = pd.to_numeric(final['게이트'], errors='coerce').fillna(0)
         
-        def get_zone(row):
-            if row['g_num'] > 0:
-                return '서편' if 0 < row['g_num'] <= 250 else '동편'
-            else:
-                exit_val = str(row.get('출구', '')).strip().upper()
-                if exit_val == 'A': return '서편'
-                if exit_val == 'B': return '동편'
-                return '동편'
-        def get_gate_str(row):
-            if row['g_num'] > 0:
-                return str(int(row['g_num']))
-            else:
-                exit_val = str(row.get('출구', '')).strip().upper()
-                if exit_val in ['A', 'B']: return '-'
-                return '-'
+            def get_zone(row):
+                if row['g_num'] > 0:
+                    return '서편' if 0 < row['g_num'] <= 250 else '동편'
+                else:
+                    exit_val = str(row.get('출구', '')).strip().upper()
+                    if exit_val == 'A': return '서편'
+                    if exit_val == 'B': return '동편'
+                    return '동편'
+            def get_gate_str(row):
+                if row['g_num'] > 0:
+                    return str(int(row['g_num']))
+                else:
+                    exit_val = str(row.get('출구', '')).strip().upper()
+                    if exit_val in ['A', 'B']: return '-'
+                    return '-'
         
-        final['구역'] = final.apply(get_zone, axis=1)
-        final['게이트'] = final.apply(get_gate_str, axis=1)
+            final['구역'] = final.apply(get_zone, axis=1)
+            final['게이트'] = final.apply(get_gate_str, axis=1)
         
-        total_p = final['p_val'].sum()
-        def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
-        ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
+            total_p = final['p_val'].sum()
+            def c_sum(c): return final[final['편명'].str.startswith(c, na=False)]['p_val'].sum()
+            ke_s, oz_s, dl_s = c_sum('KE'), c_sum('OZ'), c_sum('DL')
         
-        st.components.v1.html(
-            """
-            <style>
-            body { margin: 0; padding: 0; overflow: hidden; display: flex; gap: 10px; }
-            .custom-btn {
-                background-color: white; border: 1px solid #dcdcdc; color: #31333f;
-                padding: 6px 15px; font-size: 14px; border-radius: 6px; cursor: pointer;
-                font-family: sans-serif; box-shadow: 0px 1px 3px rgba(0,0,0,0.1);
-            }
-            .custom-btn:hover { border-color: #ff4b4b; color: #ff4b4b; }
-            </style>
-            <button class="custom-btn" onclick="window.parent.print()">📄 PDF 저장</button>
-            <button class="custom-btn" onclick="takePic()" id="pic-btn">📸 전체 사진으로 저장</button>
+            st.components.v1.html(
+                """
+                <style>
+                body { margin: 0; padding: 0; overflow: hidden; display: flex; gap: 10px; }
+                .custom-btn {
+                    background-color: white; border: 1px solid #dcdcdc; color: #31333f;
+                    padding: 6px 15px; font-size: 14px; border-radius: 6px; cursor: pointer;
+                    font-family: sans-serif; box-shadow: 0px 1px 3px rgba(0,0,0,0.1);
+                }
+                .custom-btn:hover { border-color: #ff4b4b; color: #ff4b4b; }
+                </style>
+                <button class="custom-btn" onclick="window.parent.print()">📄 PDF 저장</button>
+                <button class="custom-btn" onclick="takePic()" id="pic-btn">📸 전체 사진으로 저장</button>
             
-            <script>
-            function takePic() {
-                var btn = document.getElementById('pic-btn');
-                btn.innerText = "⏳ 캡처 중... 잠시만요!";
-                try {
-                    var win = window.parent;
-                    var doc = win.document;
-                    if (!win.html2canvas) {
-                        var script = doc.createElement('script');
-                        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-                        script.onload = function() { doCap(win, doc, btn); };
-                        script.onerror = function() { alert("⚠ 에러"); btn.innerText = "📸 전체 사진으로 저장"; };
-                        doc.head.appendChild(script);
-                    } else { doCap(win, doc, btn); }
-                } catch(e) { btn.innerText = "📸 전체 사진으로 저장"; }
-            }
+                <script>
+                function takePic() {
+                    var btn = document.getElementById('pic-btn');
+                    btn.innerText = "⏳ 캡처 중... 잠시만요!";
+                    try {
+                        var win = window.parent;
+                        var doc = win.document;
+                        if (!win.html2canvas) {
+                            var script = doc.createElement('script');
+                            script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                            script.onload = function() { doCap(win, doc, btn); };
+                            script.onerror = function() { alert("⚠ 에러"); btn.innerText = "📸 전체 사진으로 저장"; };
+                            doc.head.appendChild(script);
+                        } else { doCap(win, doc, btn); }
+                    } catch(e) { btn.innerText = "📸 전체 사진으로 저장"; }
+                }
             
-            function doCap(win, doc, btn) {
-                var target = doc.querySelector('.block-container') || doc.querySelector('.main');
-                var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe, [data-testid="stHtml"]');
-                var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
-                var mainView = doc.querySelector('.main');
+                function doCap(win, doc, btn) {
+                    var target = doc.querySelector('.block-container') || doc.querySelector('.main');
+                    var hides = doc.querySelectorAll('[data-testid="stSidebar"], header, iframe, [data-testid="stHtml"]');
+                    var appView = doc.querySelector('.appview-container') || doc.querySelector('[data-testid="stAppViewContainer"]');
+                    var mainView = doc.querySelector('.main');
                 
-                var oldAppOverflow = appView ? appView.style.overflow : '';
-                var oldAppHeight = appView ? appView.style.height : '';
-                var oldMainOverflow = mainView ? mainView.style.overflow : '';
-                var oldMainHeight = mainView ? mainView.style.height : '';
-                if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
-                if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
+                    var oldAppOverflow = appView ? appView.style.overflow : '';
+                    var oldAppHeight = appView ? appView.style.height : '';
+                    var oldMainOverflow = mainView ? mainView.style.overflow : '';
+                    var oldMainHeight = mainView ? mainView.style.height : '';
+                    if(appView) { appView.style.overflow = 'visible'; appView.style.height = 'auto'; }
+                    if(mainView) { mainView.style.overflow = 'visible'; mainView.style.height = 'auto'; }
                 
-                hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
-                setTimeout(function() {
-                    win.html2canvas(target, { scale: 6, useCORS: true, backgroundColor: '#ffffff' }).then(function(canvas) {
-                        var link = doc.createElement('a'); link.download = '잡지.png'; link.href = canvas.toDataURL('image/png'); link.click();
-                    }).finally(function() {
-                        if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
-                        if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
-                        hides.forEach(function(e){ e.style.display = e.dataset.old || ''; }); btn.innerText = "📸 전체 사진으로 저장";
-                    });
-                }, 800);
-            }
-            </script>
-            """, height=45
-        )
+                    hides.forEach(function(e){ e.dataset.old = e.style.display; e.style.display = 'none'; });
+                    setTimeout(function() {
+                        win.html2canvas(target, { scale: 6, useCORS: true, backgroundColor: '#ffffff' }).then(function(canvas) {
+                            var link = doc.createElement('a'); link.download = '잡지.png'; link.href = canvas.toDataURL('image/png'); link.click();
+                        }).finally(function() {
+                            if(appView) { appView.style.overflow = oldAppOverflow; appView.style.height = oldAppHeight; }
+                            if(mainView) { mainView.style.overflow = oldMainOverflow; mainView.style.height = oldMainHeight; }
+                            hides.forEach(function(e){ e.style.display = e.dataset.old || ''; }); btn.innerText = "📸 전체 사진으로 저장";
+                        });
+                    }, 800);
+                }
+                </script>
+                """, height=45
+            )
         
-        st.markdown(f"""
-            <div class="total-banner" style="position: relative;">
-                <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
-                <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #1E3A8A; font-size: 16px;">{display_date_str}</div>
-            </div>
-            <div class="carrier-banner">
-                <span class="carrier-item">KE: <span style="color:#1E3A8A;">{ke_s:,}</span>명</span>
-                <span class="carrier-item">OZ: <span style="color:#1E3A8A;">{oz_s:,}</span>명</span>
-                <span class="carrier-item">DL: <span style="color:#1E3A8A;">{dl_s:,}</span>명</span>
-            </div>
-            <hr style="margin: 2px 0 10px 0; border: 0; border-top: 1px solid #e5e7eb;">
-        """, unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="total-banner" style="position: relative;">
+                    <div style='margin:0; color:#1E3A8A; font-size: 18px; font-weight: bold;'>📊 총 승객수: {total_p:,}명</div>
+                    <div style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #1E3A8A; font-size: 16px;">{display_date_str}</div>
+                </div>
+                <div class="carrier-banner">
+                    <span class="carrier-item">KE: <span style="color:#1E3A8A;">{ke_s:,}</span>명</span>
+                    <span class="carrier-item">OZ: <span style="color:#1E3A8A;">{oz_s:,}</span>명</span>
+                    <span class="carrier-item">DL: <span style="color:#1E3A8A;">{dl_s:,}</span>명</span>
+                </div>
+                <hr style="margin: 2px 0 10px 0; border: 0; border-top: 1px solid #e5e7eb;">
+            """, unsafe_allow_html=True)
         
-        west_p = final[final['구역'] == '서편']['p_val'].sum()
-        east_p = final[final['구역'] == '동편']['p_val'].sum()
+            west_p = final[final['구역'] == '서편']['p_val'].sum()
+            east_p = final[final['구역'] == '동편']['p_val'].sum()
         
-        w_html = generate_table_html(final[final['구역'] == '서편'], "⬅ 서편", west_p, "#DC2626", opt_airline, opt_peak, base_font_size)
-        e_html = generate_table_html(final[final['구역'] == '동편'], "➡ 동편", east_p, "#2563EB", opt_airline, opt_peak, base_font_size)
-        st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
+            w_html = generate_table_html(final[final['구역'] == '서편'], "⬅ 서편", west_p, "#DC2626", opt_airline, opt_peak, base_font_size)
+            e_html = generate_table_html(final[final['구역'] == '동편'], "➡ 동편", east_p, "#2563EB", opt_airline, opt_peak, base_font_size)
+            st.markdown(f'<div class="print-row">{e_html}{w_html}</div>', unsafe_allow_html=True)
