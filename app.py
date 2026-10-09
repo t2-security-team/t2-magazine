@@ -18,6 +18,9 @@ tomorrow_date_str = (now_kst_time + timedelta(days=1)).strftime("%Y-%m-%d")
 
 SHEET_NAME = "보안검색_데이터_공유" 
 
+# 🔑 관리자 비밀번호 (오늘 데이터 올리기/비우기에 사용, 현재는 "0000")
+ADMIN_PW = "0000"
+
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
     creds_dict = dict(st.secrets["gcp"])
@@ -445,6 +448,10 @@ if not emergency_mode:
         .step-h .num { display:inline-flex; width:24px; height:24px; border-radius:50%; background:#31333f; color:#fff; font-size:13px; align-items:center; justify-content:center; margin-right:8px; flex-shrink:0; }
         .step-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:8px; }
         .note-warn { margin:6px 0 22px 0; background:#ffecec; border-left:4px solid #ff4b4b; padding:10px 14px; border-radius:6px; font-size:14px; color:#7f1d1d; }
+        .lock-box { background:#fff7ed; border:1px solid #fdba74; border-radius:8px; padding:12px 14px; margin-bottom:18px; }
+        .lock-box .t { font-weight:700; color:#9a3412; font-size:14px; }
+        .lock-box .s { font-size:13px; color:#7c2d12; margin-top:4px; }
+        .unlock-box { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:4px 0 18px 0; font-size:14px; color:#065f46; font-weight:600; }
         .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
         .reg-box .h { font-weight:700; color:#1E3A8A; font-size:14px; margin-bottom:8px; }
         .reg-box .f { font-size:13px; margin:0 0 5px 8px; color:#1f2937; word-break:break-all; }
@@ -498,12 +505,20 @@ if not emergency_mode:
 
         saved_files = today_files if is_today else tom_files
         saved_pax_df = today_pax if is_today else tom_pax
-        is_upload_locked = len(saved_files) >= 3
+        # 오늘 데이터는 실시간 잡지에 표시 중이므로 항상 비밀번호로 잠금 (내일은 개수 제한 없이 자유롭게)
+        is_upload_locked = False
 
         # 2. 파일 올리기
-        st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · 여러 개 가능 (날짜당 최대 3개)</span></div>", unsafe_allow_html=True)
-        if is_upload_locked:
-            st.error(f"🚨 **업로드 제한됨**\n\n{target_word}({target_label})에 이미 3개의 파일이 등록되어 있습니다. 아래 3번에서 데이터를 먼저 비워주세요.")
+        st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · 여러 개 가능</span></div>", unsafe_allow_html=True)
+        if is_today:
+            st.markdown("<div class='lock-box'><div class='t'>🔒 오늘 데이터는 잠겨 있습니다</div><div class='s'>실시간 잡지에 표시 중인 데이터라, 올리거나 고치려면 관리자 비밀번호가 필요합니다.</div></div>", unsafe_allow_html=True)
+            upload_pw = st.text_input("관리자 비밀번호", type="password", placeholder="비밀번호 4자리", key="upload_pw", label_visibility="collapsed")
+            if upload_pw == ADMIN_PW:
+                st.markdown("<div class='unlock-box'>🔓 잠금 해제됨 — 올린 파일은 오늘 데이터에 합쳐지고, 같은 편명은 새 값으로 바뀝니다.</div>", unsafe_allow_html=True)
+            else:
+                is_upload_locked = True
+                if upload_pw != "":
+                    st.error("비밀번호가 일치하지 않습니다.")
 
         uploaded_pax_files = st.file_uploader(
             "승객수 파일 (.xls, .xlsx, .csv)",
@@ -572,8 +587,7 @@ if not emergency_mode:
 
                     admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리")
 
-                    # 🔑 관리자 비밀번호 (현재는 "0000")
-                    if admin_pw == "0000":
+                    if admin_pw == ADMIN_PW:
                         if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
                             clear_date_data(target_date_str)
                             st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
