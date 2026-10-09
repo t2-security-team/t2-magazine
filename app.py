@@ -207,6 +207,12 @@ def clean_flight_no(val):
     if match: return f"{match.group(1)}{int(match.group(2)):03d}"
     return val
      
+FLIGHT_NO_RE = re.compile(r"^([A-Z]{2}|[A-Z]\d|\d[A-Z])\d{1,4}[A-Z]?$")  # 앞 두 글자에 영문이 꼭 있어야 함
+
+def is_valid_flight(val):
+    """편명처럼 생긴 값만 True (예: KE036, OZ1153). 빈칸·합계 줄·'TOTAL' 등은 False"""
+    return bool(FLIGHT_NO_RE.match(str(val).strip().upper())) if not pd.isna(val) else False
+
 def smart_read(file):
     filename = file.name.lower()
     df = None
@@ -536,6 +542,8 @@ def get_date_status(date_str):
         files = []
     if not full_pax_df.empty:
         pax = full_pax_df[full_pax_df['조회일자'] == date_str].copy()
+        if '편명' in pax.columns:
+            pax = pax[pax['편명'].apply(is_valid_flight)]  # 예전에 저장된 합계 줄은 세지 않음
     else:
         pax = pd.DataFrame()
     flights = len(pax)
@@ -767,6 +775,7 @@ if not emergency_mode:
                                 if r_c: tmp['출발지'] = df[r_c].astype(str)
                                 tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
                                 tmp['편명'] = tmp['편명'].apply(clean_flight_no)
+                                tmp = tmp[tmp['편명'].apply(is_valid_flight)]  # 엑셀 맨 아래 합계 줄 등 제외
                                 p_temp.append(tmp)
                                 new_file_names.append(f.name)
 
