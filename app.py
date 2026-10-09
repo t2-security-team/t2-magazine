@@ -143,6 +143,12 @@ def clear_date_data(target_date_str):
     load_pax_data.clear()
     load_file_list.clear()
 
+# 저장·비우기를 하고 나면 날짜 선택을 항상 '내일'로 되돌리고, 비밀번호 칸과 올린 파일 목록도 비움
+if st.session_state.pop("reset_to_tomorrow", False):
+    for _k in ("upload_target", "upload_pw", "clear_pw"):
+        st.session_state.pop(_k, None)
+    st.session_state["uploader_ver"] = st.session_state.get("uploader_ver", 0) + 1
+
 if "toast_msg" in st.session_state:
     st.toast(st.session_state["toast_msg"], icon="✅")
     del st.session_state["toast_msg"]
@@ -523,7 +529,7 @@ if not emergency_mode:
         uploaded_pax_files = st.file_uploader(
             "승객수 파일 (.xls, .xlsx, .csv)",
             accept_multiple_files=True,
-            key="pax_uploader",
+            key=f"pax_uploader_{st.session_state.get('uploader_ver', 0)}",
             disabled=is_upload_locked,
             label_visibility="collapsed"
         )
@@ -569,6 +575,7 @@ if not emergency_mode:
                 st.session_state["toast_msg"] = f"{target_word}({target_label}) 데이터 저장 완료!"
             elif not p_temp:
                 st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
+            st.session_state["reset_to_tomorrow"] = True
             st.rerun()
 
         # 3. 등록된 파일 확인
@@ -585,12 +592,13 @@ if not emergency_mode:
                 with st.expander("🚨 오늘 데이터 강제 비우기 (관리자용)"):
                     st.markdown("<span style='font-size:12px; color:gray;'>실시간 잡지 표출에 문제가 생길 수 있으므로 가급적 지우지 마세요.</span>", unsafe_allow_html=True)
 
-                    admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리")
+                    admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리", key="clear_pw")
 
                     if admin_pw == ADMIN_PW:
                         if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
                             clear_date_data(target_date_str)
                             st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
+                            st.session_state["reset_to_tomorrow"] = True
                             st.rerun()
                     elif admin_pw != "":
                         st.error("비밀번호가 일치하지 않습니다.")
@@ -598,6 +606,7 @@ if not emergency_mode:
                 if st.button(f"🗑 내일({target_label}) 데이터 비우기", use_container_width=True):
                     clear_date_data(target_date_str)
                     st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+                    st.session_state["reset_to_tomorrow"] = True
                     st.rerun()
         else:
             st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div><div class='none'>아직 등록된 파일이 없습니다.</div></div>", unsafe_allow_html=True)
