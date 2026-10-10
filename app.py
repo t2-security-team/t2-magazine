@@ -817,4 +817,4 @@ with center:
         st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
     with l2:
         st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
-        st.link_button("🚨 비상용 잡지 (게이트 고장 시)", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
+        st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
