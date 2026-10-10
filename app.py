@@ -206,6 +206,13 @@ def clean_flight_no(val):
     match = re.match(r'([A-Z]+)(\d+)', val)
     if match: return f"{match.group(1)}{int(match.group(2)):03d}"
     return val
+
+def clean_pax_flight_no(val):
+    """승객 엑셀 편명용: 끝 알파벳(전날 지연편 표시, 예: KE036Y·OZ324D)은 지우지 않고 따로 저장합니다."""
+    base = clean_flight_no(val)
+    if pd.isna(val): return base
+    letter = re.fullmatch(r"[A-Z]+\d+([A-Z])", str(val).strip().replace(" ", "").upper())
+    return base + letter.group(1) if letter else base
      
 FLIGHT_NO_RE = re.compile(r"^([A-Z]{2}|[A-Z]\d|\d[A-Z])\d{1,4}[A-Z]?$")  # 앞 두 글자에 영문이 꼭 있어야 함
 
@@ -774,7 +781,7 @@ if not emergency_mode:
                                 tmp = df[[f_c, p_c]].copy()
                                 if r_c: tmp['출발지'] = df[r_c].astype(str)
                                 tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
-                                tmp['편명'] = tmp['편명'].apply(clean_flight_no)
+                                tmp['편명'] = tmp['편명'].apply(clean_pax_flight_no)
                                 tmp = tmp[tmp['편명'].apply(is_valid_flight)]  # 엑셀 맨 아래 합계 줄 등 제외
                                 p_temp.append(tmp)
                                 new_file_names.append(f.name)
