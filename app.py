@@ -1,0 +1,820 @@
+import html
+import streamlit as st
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+import re
+import io
+import hashlib
+from datetime import datetime, timedelta, timezone
+
+# 1. 페이지 설정
+st.set_page_config(page_title="T2 승객 수 파일 저장", layout="wide")
+
+# KST(한국시간) 기준 날짜 세팅
+KST = timezone(timedelta(hours=9))
+now_kst_time = datetime.now(KST)
+today_date_str = now_kst_time.strftime("%Y-%m-%d")
+tomorrow_date_str = (now_kst_time + timedelta(days=1)).strftime("%Y-%m-%d")
+
+SHEET_NAME = "보안검색_데이터_공유" 
+
+# 🔑 관리자 비밀번호 (오늘 데이터 올리기/비우기에 사용, 현재는 "0000")
+ADMIN_PW = "0000"
+
+@st.cache_resource(show_spinner=False)
+def get_gspread_client():
+    creds_dict = dict(st.secrets["gcp"])
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
+@st.cache_resource(show_spinner=False)
+def get_spreadsheet():
+    client = get_gspread_client()
+    return client.open(SHEET_NAME)
+
+# ⭐ [핵심 1] 꼬리표(날짜) 달고 데이터 저장 + 과거 데이터 자동 청소
+def update_pax_data(new_df, target_date_str):
+    new_df['조회일자'] = target_date_str
+    spreadsheet = get_spreadsheet()
+    try:
+        sheet = spreadsheet.worksheet("pax_data")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            existing_df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in existing_df.columns:
+                existing_df['조회일자'] = today_date_str
+        else:
+            existing_df = pd.DataFrame(columns=['조회일자', '편명', '승객수', '출발지'])
+    except:
+        sheet = spreadsheet.add_worksheet(title="pax_data", rows=1000, cols=20)
+        existing_df = pd.DataFrame(columns=['조회일자', '편명', '승객수', '출발지'])
+
+    combined = pd.concat([existing_df, new_df], ignore_index=True)
+    combined = combined[combined['조회일자'] >= today_date_str]
+    combined.drop_duplicates(subset=['조회일자', '편명'], keep='last', inplace=True)
+
+    sheet.clear()
+    data_to_save = [combined.columns.values.tolist()] + combined.fillna("").astype(str).values.tolist()
+    sheet.update(range_name="A1", values=data_to_save)
+    load_pax_data.clear()
+    return True
+
+# ⭐ [핵심 2] 파일 목록도 꼬리표 달고 저장
+def update_file_list(new_files, target_date_str):
+    new_df = pd.DataFrame({'조회일자': [target_date_str]*len(new_files), '파일명': new_files})
+    spreadsheet = get_spreadsheet()
+    try:
+        sheet = spreadsheet.worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            existing_df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in existing_df.columns:
+                existing_df['조회일자'] = today_date_str
+        else:
+            existing_df = pd.DataFrame(columns=['조회일자', '파일명'])
+    except:
+        sheet = spreadsheet.add_worksheet(title="file_list", rows=100, cols=5)
+        existing_df = pd.DataFrame(columns=['조회일자', '파일명'])
+
+    combined = pd.concat([existing_df, new_df], ignore_index=True)
+    combined = combined[combined['조회일자'] >= today_date_str]
+    combined.drop_duplicates(subset=['조회일자', '파일명'], keep='last', inplace=True)
+
+    sheet.clear()
+    data_to_save = [combined.columns.values.tolist()] + combined.fillna("").astype(str).values.tolist()
+    sheet.update(range_name="A1", values=data_to_save)
+    load_file_list.clear()
+
+@st.cache_data(ttl=1800, max_entries=1, show_spinner=False)
+def load_file_list():
+    try:
+        spreadsheet = get_spreadsheet()
+        sheet = spreadsheet.worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            return df
+    except: pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=21600, max_entries=1, show_spinner=False)
+def load_pax_data():
+    try:
+        spreadsheet = get_spreadsheet()
+        sheet = spreadsheet.worksheet("pax_data")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            return df
+    except: pass
+    return pd.DataFrame()
+
+# ⭐ 특정 날짜 데이터 비우기 (강제 비우기)
+def clear_date_data(target_date_str):
+    spreadsheet = get_spreadsheet()
+    try:
+        sheet = spreadsheet.worksheet("pax_data")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            df = df[(df['조회일자'] != target_date_str) & (df['조회일자'] >= today_date_str)]
+            sheet.clear()
+            sheet.update(range_name="A1", values=[df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist())
+    except: pass
+
+    try:
+        sheet = spreadsheet.worksheet("file_list")
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if '조회일자' not in df.columns: df['조회일자'] = today_date_str
+            df = df[(df['조회일자'] != target_date_str) & (df['조회일자'] >= today_date_str)]
+            sheet.clear()
+            sheet.update(range_name="A1", values=[df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist())
+    except: pass
+
+    load_pax_data.clear()
+    load_file_list.clear()
+
+# 저장·비우기를 하고 나면 날짜 선택을 항상 '내일'로 되돌리고, 비밀번호 칸과 올린 파일 목록도 비움
+if st.session_state.pop("reset_to_tomorrow", False):
+    for _k in ("upload_target", "upload_pw", "clear_pw"):
+        st.session_state.pop(_k, None)
+    st.session_state["uploader_ver"] = st.session_state.get("uploader_ver", 0) + 1
+
+if "toast_msg" in st.session_state:
+    st.toast(st.session_state["toast_msg"], icon="✅")
+    del st.session_state["toast_msg"]
+     
+# --- [디자인 및 PDF 압축 CSS] ---
+st.markdown("""
+    <style>
+    /* 상단 Fork 버튼과 GitHub 고양이 아이콘 숨김 */
+    [data-testid="stToolbarActions"] {
+        display: none !important;
+    }
+
+    .main .block-container { padding-top: 0px !important; padding-bottom: 0px !important; margin-top: -15px !important; }
+    div[data-testid="stVerticalBlock"] { gap: 0px !important; }
+    .element-container { margin-bottom: 0px !important; }
+    iframe { margin-bottom: 0px !important; min-height: 45px !important; }
+    
+    .file-box { background-color:#f0f7ff; padding:15px; border-radius:5px; margin-bottom:15px; border: 1px solid #3b82f6; display: block; overflow: visible; }
+    .file-item { font-size:13px; margin: 0 0 6px 10px !important; line-height: 1.5 !important; color: #1f2937; font-weight: normal; word-break: break-all; }
+    .file-box-title { font-size:14px; font-weight:bold; color:#1E3A8A; margin: 0 0 10px 0 !important; line-height: 1.4 !important; }
+    
+    .merged-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; margin-bottom: 0px !important; }
+    .merged-table tr { border: none !important; } 
+    .merged-table th { background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; padding: 4px; font-weight: bold; }
+    .merged-table td { border: 1px solid #dee2e6 !important; padding: 3px; vertical-align: middle; font-weight: bold !important; }
+    
+    .sum-cell { font-weight: bold; color: #1E3A8A; vertical-align: middle !important; }
+    
+    .total-banner { background-color: #f0f7ff !important; padding: 4px 8px !important; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 2px; margin-top: 2px; }
+    .carrier-banner { background-color: #ffffff !important; padding: 4px; border-radius: 8px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 4px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+    .carrier-item { font-size: 14px; font-weight: bold; }
+    .print-row { display: flex; flex-direction: row; gap: 15px; width: 100%; }
+    .print-col { flex: 1; min-width: 0; margin-bottom: 0px !important; }
+    
+    @media print {
+        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"], iframe, [data-testid="stHtml"] { display: none !important; }
+        html, body { height: auto !important; min-height: auto !important; padding-bottom: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; }
+        .appview-container, .main, .block-container, .element-container { padding-top: 0 !important; margin-top: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+        div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+        body { zoom: 75%; }
+        .print-row { display: flex !important; flex-direction: row !important; }
+        table { page-break-inside: auto; margin-bottom: 0px !important; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+        @page { size: A4; margin-top: 12mm !important; margin-bottom: 12mm !important; margin-left: 10mm !important; margin-right: 10mm !important; }
+        @page :first { margin-top: 0mm !important; }
+    }
+    </style>
+""", unsafe_allow_html=True)
+     
+def clean_flight_no(val):
+    if pd.isna(val): return ""
+    val = str(val).strip().replace(" ", "").upper()
+    match = re.match(r'([A-Z]+)(\d+)', val)
+    if match: return f"{match.group(1)}{int(match.group(2)):03d}"
+    return val
+
+def clean_pax_flight_no(val):
+    """승객 엑셀 편명용: 끝 알파벳(전날 지연편 표시, 예: KE036Y·OZ324D)은 지우지 않고 따로 저장합니다."""
+    base = clean_flight_no(val)
+    if pd.isna(val): return base
+    letter = re.fullmatch(r"[A-Z]+\d+([A-Z])", str(val).strip().replace(" ", "").upper())
+    return base + letter.group(1) if letter else base
+     
+FLIGHT_NO_RE = re.compile(r"^([A-Z]{2}|[A-Z]\d|\d[A-Z])\d{1,4}[A-Z]?$")  # 앞 두 글자에 영문이 꼭 있어야 함
+
+def is_valid_flight(val):
+    """편명처럼 생긴 값만 True (예: KE036, OZ1153). 빈칸·합계 줄·'TOTAL' 등은 False"""
+    return bool(FLIGHT_NO_RE.match(str(val).strip().upper())) if not pd.isna(val) else False
+
+def smart_read(file):
+    filename = file.name.lower()
+    df = None
+    try:
+        if filename.endswith('.csv'):
+            encodings = ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']
+            for enc in encodings:
+                try:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding=enc)
+                    break
+                except: pass
+        elif filename.endswith('.xls'):
+            try:
+                file.seek(0)
+                df = pd.read_excel(file, engine='xlrd')
+            except:
+                try:
+                    file.seek(0)
+                    raw_data = file.read()
+                    for enc in ['cp949', 'euc-kr', 'utf-8']:
+                        try:
+                            html_str = raw_data.decode(enc)
+                            dfs = pd.read_html(io.StringIO(html_str))
+                            if dfs: 
+                                df = dfs[0]
+                                break
+                        except: pass
+                except: pass
+        else:
+            file.seek(0)
+            df = pd.read_excel(file, engine='openpyxl')
+    except:
+        try:
+            file.seek(0)
+            df = pd.read_excel(file)
+        except: return None
+        
+    if df is None or df.empty: return None
+    all_data = [df.columns.tolist()] + df.values.tolist()
+    header_idx = -1
+    for i, row in enumerate(all_data[:20]):
+        row_str = "".join([str(x).upper() for x in row])
+        if 'FLT' in row_str or '편명' in row_str or 'FLIGHT' in row_str:
+            header_idx = i
+            break
+            
+    if header_idx > 0:
+        new_header = all_data[header_idx]
+        new_data = all_data[header_idx+1:]
+        df = pd.DataFrame(new_data, columns=new_header)
+        
+    df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
+    return df
+     
+# --- [DL 환승객 표 사진 읽기] ---
+# 사진 읽기 프로그램(tesseract)이 없거나 실패해도 사이트는 그대로 동작하고, 표에 직접 입력하면 됨
+try:
+    import pytesseract
+    from PIL import Image, ImageOps, ImageFilter
+    OCR_AVAILABLE = True
+except Exception:
+    OCR_AVAILABLE = False
+
+IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+DL_COLS = ['편명', '환승객', '총 예약자', '비율(%)']
+
+def is_image_file(f):
+    return f.name.lower().endswith(IMAGE_EXTS)
+
+# (맞출 너비, 흑백처리, 읽기모드) — 첫 방식에서 검증을 통과하면 바로 끝남
+OCR_VARIANTS = [(1760, None, 11), (1760, 200, 6), (2640, 170, 6), (2640, 200, 6),
+                (1760, None, 6), (2640, None, 11), (1300, None, 11), (1760, "sharp", 11)]
+
+def _ocr_read_once(img, psm):
+    d = pytesseract.image_to_data(img, lang="eng", config=f"--psm {psm}", output_type=pytesseract.Output.DICT)
+    words = []
+    for i, t in enumerate(d["text"]):
+        t = str(t).strip()
+        if not t: continue
+        words.append((t, d["left"][i] + d["width"][i] / 2, d["top"][i] + d["height"][i] / 2, d["height"][i]))
+
+    # 1) 편명(DLxxx) 열 위치 찾기
+    flights = []
+    for t, x, y, hh in words:
+        m = re.search(r"D[L1I|]\s*([0-9OQD]{2,4})", t.upper())
+        if m:
+            digits = re.sub(r"[OQD]", "0", m.group(1))  # 숫자 0을 글자 O로 읽는 경우 보정
+            fn = f"DL{int(digits):03d}"
+            if fn not in [f[0] for f in flights]:
+                flights.append((fn, x, y))
+    flights.sort(key=lambda f: f[1])
+    if not flights:
+        return [], None, ["사진에서 DL 편명을 찾지 못했습니다."]
+
+    # 2) 숫자들을 줄(높이)별로 묶기
+    nums = sorted([(t.replace(",", ""), x, y, hh) for t, x, y, hh in words
+                   if re.fullmatch(r"\d+(\.\d+)?%?", t.replace(",", ""))], key=lambda n: n[2])
+    rows, cur = [], []
+    for n in nums:
+        if cur and abs(n[2] - cur[-1][2]) > max(n[3], cur[-1][3]) * 0.8:
+            rows.append(cur); cur = []
+        cur.append(n)
+    if cur: rows.append(cur)
+    fy = sum(f[2] for f in flights) / len(flights)
+    rows = [r for r in rows if sum(n[2] for n in r) / len(r) > fy + 10 and len(r) >= len(flights)]
+    pct_rows = [r for r in rows if sum(1 for n in r if n[0].endswith("%")) >= len(flights) // 2 + 1]
+    int_rows = [r for r in rows if r not in pct_rows]
+    if len(int_rows) < 2:
+        return [], None, ["사진에서 총 예약자·환승객 숫자 줄을 찾지 못했습니다."]
+    total_row, ts_row = int_rows[0], int_rows[1]
+    pct_row = pct_rows[0] if pct_rows else None
+
+    def near(row, fx):
+        return min(row, key=lambda n: abs(n[1] - fx))[0]
+
+    out, problems = [], []
+    for fn, fx, _ in flights:
+        try:
+            ts = int(float(near(ts_row, fx))); tot = int(float(near(total_row, fx)))
+        except Exception:
+            problems.append(f"{fn}: 숫자 인식 실패"); continue
+        pct = None
+        if pct_row:
+            try: pct = float(near(pct_row, fx).rstrip("%"))
+            except Exception: pct = None
+        if pct is None or tot <= 0 or abs(ts / tot * 100 - pct) >= 0.15:
+            problems.append(f"{fn}: 비율 불일치")
+        out.append({'편명': fn, '환승객': ts, '총 예약자': tot, '비율(%)': pct})
+
+    # TTL = 환승객 줄에서 마지막 편명보다 오른쪽에 있는 숫자
+    ttl = None
+    right = [n for n in ts_row if n[1] > flights[-1][1] + 20]
+    if right:
+        try: ttl = int(float(max(right, key=lambda n: n[1])[0]))
+        except Exception: ttl = None
+    if ttl is None or ttl != sum(o['환승객'] for o in out):
+        problems.append("TTL 불일치")
+    return out, ttl, problems
+
+@st.cache_data(show_spinner=False, max_entries=20)
+def read_dl_photo(img_bytes):
+    """사진 → (읽은 줄 목록, TTL, 문제 목록). 같은 사진은 다시 읽지 않음"""
+    if not OCR_AVAILABLE:
+        return [], None, ["이 사이트에서는 사진 자동 읽기를 쓸 수 없습니다. 아래 표에 사진을 보고 직접 입력해 주세요."]
+    try:
+        base = ImageOps.grayscale(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+    except Exception:
+        return [], None, ["사진 파일을 열 수 없습니다. 아래 표에 직접 입력해 주세요."]
+    best = None
+    for width, mode, psm in OCR_VARIANTS:
+        try:
+            w, h = base.size
+            s = width / max(w, 1)  # 사진 크기와 상관없이 일정한 너비로 맞춤
+            im = base.resize((max(1, int(w * s)), max(1, int(h * s))), Image.LANCZOS)
+            if mode == "sharp": im = im.filter(ImageFilter.SHARPEN).filter(ImageFilter.SHARPEN)
+            elif mode: im = im.point(lambda p, thr=mode: 255 if p > thr else 0)
+            im = ImageOps.expand(im, border=40, fill=255)
+            out, ttl, prob = _ocr_read_once(im, psm)
+        except Exception:
+            continue
+        if out and not prob:
+            return out, ttl, []
+        if out and (best is None or len(prob) < len(best[2])):
+            best = (out, ttl, prob)
+    if best:
+        return best
+    return [], None, ["사진에서 DL 표를 읽지 못했습니다. 아래 표에 사진을 보고 직접 입력해 주세요."]
+
+def check_dl_rows(df, ttl):
+    """확인 표 검사: 각 편 환승객÷총예약자=비율, 환승객 합계=TTL. (저장할 줄, 문제 목록)"""
+    clean, problems = [], []
+    for _, r in df.iterrows():
+        fn = clean_flight_no(r.get('편명'))
+        if not fn or fn == "NAN": continue
+        ts = pd.to_numeric(r.get('환승객'), errors='coerce')
+        if pd.isna(ts):
+            problems.append(f"{fn}: 환승객 숫자를 입력해 주세요"); continue
+        ts = int(round(ts))
+        tot = pd.to_numeric(r.get('총 예약자'), errors='coerce')
+        pct = pd.to_numeric(r.get('비율(%)'), errors='coerce')
+        if not pd.isna(tot) and not pd.isna(pct):
+            if tot <= 0 or abs(ts / tot * 100 - pct) >= 0.15:
+                calc = f"{ts / tot * 100:.1f}%" if tot > 0 else "계산 불가"
+                problems.append(f"{fn}: 환승객 {ts} ÷ 총 예약자 {int(tot)} = {calc} → 표의 비율 {pct:g}%와 다름")
+        clean.append({'편명': fn, '승객수': ts})
+    if not clean:
+        problems.append("편명과 환승객을 한 줄 이상 입력해 주세요")
+    total = sum(c['승객수'] for c in clean)
+    if not ttl:
+        problems.append("표 맨 오른쪽 TTL(환승객 합계)을 입력해 주세요")
+    elif total != int(ttl):
+        problems.append(f"환승객 합계 {total:,}명 → 표의 TTL {int(ttl):,}명과 다름")
+    if len({c['편명'] for c in clean}) != len(clean):
+        problems.append("같은 편명이 두 번 들어가 있습니다")
+    return clean, problems
+
+def parse_dl_pax(df):
+    if df is None or df.empty: return None
+    all_rows = [df.columns.tolist()] + df.values.tolist()
+    pax_row_idx = -1
+    pax_row_data = []
+    header_row_data = []
+    
+    for i, row in enumerate(all_rows):
+        for cell in row:
+            if str(cell).replace(" ", "").strip() == '환승객':
+                pax_row_idx = i
+                pax_row_data = row
+                break
+        if pax_row_idx != -1: break
+        
+    if pax_row_idx != -1:
+        header_row_data = all_rows[0]
+        dl_data = []
+        for col_idx, cell in enumerate(header_row_data):
+            cell_str = str(cell)
+            if 'DL' in cell_str.upper() and re.search(r'DL\s*\d+', cell_str, re.IGNORECASE):
+                flt_no = re.search(r'(DL\s*\d+)', cell_str, re.IGNORECASE).group(1).replace(" ", "").upper()
+                flt_no = clean_flight_no(flt_no) 
+                
+                if col_idx < len(pax_row_data):
+                    pax_val = str(pax_row_data[col_idx]).replace(",", "").strip()
+                    try:
+                        pax_count = int(float(pax_val))
+                        dl_data.append({'편명': flt_no, '승객수': pax_count})
+                    except: pass
+        if dl_data: return pd.DataFrame(dl_data)
+    return None
+     
+def find_col(df, keywords):
+    if df is None or df.empty: return None
+    for col in df.columns:
+        clean_col = str(col).replace(" ", "").replace("/", "").replace("_", "").replace(".", "").upper()
+        for key in keywords:
+            if key.upper() in clean_col: return col
+    return None
+     
+def format_route(val, option):
+    if pd.isna(val): return ""
+    val = str(val).strip()
+    val = re.sub(r'\([가-힣\s]+\)', '', val).strip()
+    match = re.search(r'(.*?)\s*\(([A-Za-z0-9]+)\)', val)
+    
+    if match:
+        city = match.group(1).split('/')[0].strip() 
+        code = match.group(2).strip().upper()       
+        if code == "HND": city = "하네다"
+        elif code == "NRT": city = "나리타"
+            
+        if option == "한글 (도시명)": return city
+        elif option == "영어 (쓰리코드)": return code
+        else: return f"{city}({code})"
+            
+    if '/' in val: val = val.split('/')[0].strip()
+        
+    val_upper = val.upper()
+    if val_upper == "HND" or "HND" in val_upper:
+        if option == "한글 (도시명)": return "하네다"
+        elif option == "영어 (쓰리코드)": return "HND"
+        else: return "하네다(HND)"
+    elif val_upper == "NRT" or "NRT" in val_upper:
+        if option == "한글 (도시명)": return "나리타"
+        elif option == "영어 (쓰리코드)": return "NRT"
+        else: return "나리타(NRT)"
+        
+    return val
+     
+def generate_table_html(df, title, count, color, opt_airline, opt_peak, font_size):
+    display_title = f"{title} ({count:,}명)"
+    html = f"<div class='print-col'><h3 style='text-align:center; color:{color}; font-size:16px; margin-top:2px; margin-bottom:5px;'>{display_title}</h3>"
+    if df.empty: return html + "<div style='text-align:center; padding:20px; border:1px solid #ddd;'>데이터 없음</div></div>"
+    
+    df = df.sort_values('시간').reset_index(drop=True)
+    
+    html += f'<table class="merged-table" style="font-size: {font_size}px !important;"><thead><tr>'
+    html += f'<th style="width:14%; font-size:{font_size}px !important;">예상시간</th>'
+    html += f'<th style="width:12%; font-size:{font_size}px !important;">시간</th>'
+    html += f'<th style="width:14%; font-size:{font_size}px !important;">편명</th>'
+    html += f'<th style="font-size:{font_size}px !important;">출발지</th>'
+    html += f'<th style="width:11%; font-size:{font_size}px !important;">게이트</th>'
+    html += f'<th style="width:11%; font-size:{font_size}px !important;">승객</th>'
+    html += f'<th style="width:11%; font-size:{font_size}px !important;">합계</th>'
+    html += f'</tr></thead><tbody>'
+    
+    df['hour_val'] = df['시간'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
+    hour_counts = df['hour_val'].value_counts().sort_index()
+    hour_sums = df.groupby('hour_val')['p_val'].sum()
+    processed_hours = set()
+    
+    for i, row in df.iterrows():
+        current_h = row['hour_val']
+        flt = str(row['편명']).upper()
+        row_style_css = ""
+        
+        if opt_airline:
+            if flt.startswith("DL"): row_style_css = "background-color: #E3F2FD;" 
+            elif flt.startswith("OZ"): row_style_css = "background-color: #FDF4F7;" 
+        elif opt_peak:
+            if current_h == 16: row_style_css = "background-color: #F4FAFD;" 
+            elif current_h == 17: row_style_css = "background-color: #FFFDF0;" 
+            elif current_h == 18: row_style_css = "background-color: #FFF5F8;" 
+        td_style = f' style="{row_style_css} font-size: {font_size}px !important; font-weight: bold !important;"'
+        
+        html += f'<tr>'
+        html += f'<td{td_style}></td><td{td_style}>{row["시간"]}</td><td{td_style}>{row["편명"]}</td><td{td_style}>{row.get("출발지", "")}</td><td{td_style}>{row["게이트"]}</td><td{td_style}>{row["p_display"]}</td>'
+        
+        if current_h not in processed_hours:
+            sum_font = font_size + 1
+            html += f'<td rowspan="{hour_counts[current_h]}" class="sum-cell" style="background-color: #ffffff !important; font-size: {sum_font}px !important; font-weight: bold !important;"><div style="position: relative; z-index: 10;">{hour_sums[current_h]:,}</div></td>'
+            processed_hours.add(current_h)
+        html += '</tr>'
+    return html + '</tbody></table></div>'
+     
+# --- [날짜별 등록 현황] ---
+full_files_df = load_file_list()
+full_pax_df = load_pax_data()
+
+tomorrow_kst = now_kst_time + timedelta(days=1)
+today_label = f"{now_kst_time.month}월 {now_kst_time.day}일"
+tomorrow_label = f"{tomorrow_kst.month}월 {tomorrow_kst.day}일"
+
+def get_date_status(date_str):
+    if not full_files_df.empty and '파일명' in full_files_df.columns:
+        files = full_files_df[full_files_df['조회일자'] == date_str]['파일명'].tolist()
+    else:
+        files = []
+    if not full_pax_df.empty:
+        pax = full_pax_df[full_pax_df['조회일자'] == date_str].copy()
+        if '편명' in pax.columns:
+            pax = pax[pax['편명'].apply(is_valid_flight)]  # 예전에 저장된 합계 줄은 세지 않음
+    else:
+        pax = pd.DataFrame()
+    flights = len(pax)
+    total = 0
+    if flights and '승객수' in pax.columns:
+        total = int(pd.to_numeric(pax['승객수'].astype(str).str.replace(',', '').str.strip(), errors='coerce').fillna(0).sum())
+    return files, pax, flights, total
+
+# --- [메인: 파일 저장 화면] ---
+st.markdown("""
+    <style>
+    .pg-title { text-align:center; font-size:30px; font-weight:700; margin:48px 0 4px 0; color:#31333f; }
+    .pg-lead { text-align:center; color:#6b7280; font-size:15px; margin:0 0 24px 0; }
+    .st-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:8px; }
+    .st-card { border:1px solid #e6e6eb; border-radius:10px; padding:14px 16px; background:#fff; }
+    .st-card .d { font-weight:700; font-size:16px; color:#31333f; }
+    .st-card .tag { display:inline-block; font-size:12px; padding:2px 8px; border-radius:20px; margin-left:6px; font-weight:600; vertical-align:2px; }
+    .tag-live { background:#fde8e8; color:#b91c1c; }
+    .tag-wait { background:#eef2ff; color:#3730a3; }
+    .st-card .n { margin-top:8px; font-size:14px; color:#6b7280; }
+    .st-card .n b { color:#1E3A8A; font-size:18px; }
+    .st-card .n.empty b { color:#9ca3af; }
+    .step-h { font-weight:700; font-size:17px; line-height:1.6; margin:22px 0 0 0; padding-bottom:22px; color:#31333f; display:flex; align-items:center; flex-wrap:wrap; }
+    .step-h .num { display:inline-flex; width:24px; height:24px; border-radius:50%; background:#31333f; color:#fff; font-size:13px; align-items:center; justify-content:center; margin-right:8px; flex-shrink:0; }
+    .step-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:8px; }
+    .note-warn { margin:6px 0 22px 0; background:#ffecec; border-left:4px solid #ff4b4b; padding:10px 14px; border-radius:6px; font-size:14px; color:#7f1d1d; }
+    .lock-box { background:#fff7ed; border:1px solid #fdba74; border-radius:8px; padding:12px 14px; margin-bottom:18px; }
+    .lock-box .t { font-weight:700; color:#9a3412; font-size:14px; }
+    .lock-box .s { font-size:13px; color:#7c2d12; margin-top:4px; }
+    .unlock-box { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:4px 0 18px 0; font-size:14px; color:#065f46; font-weight:600; }
+    .reg-box { background:#f0f7ff; border:1px solid #3b82f6; border-radius:8px; padding:14px 16px; margin-bottom:26px; }
+    .reg-box .h { font-weight:700; color:#1E3A8A; font-size:14px; margin-bottom:8px; }
+    .reg-box .f { font-size:13px; margin:0 0 5px 8px; color:#1f2937; word-break:break-all; }
+    .reg-box .none { font-size:13px; color:#6b7280; }
+    .link-h { font-weight:700; font-size:17px; margin:30px 0 0 0; padding:14px 0 24px 0; border-top:1px solid #e6e6eb; color:#31333f; }
+    div[data-testid="stFileUploader"] { margin-bottom:10px; }
+    div[data-testid="stLinkButton"] { margin-bottom:10px; }
+    .photo-h { font-weight:700; font-size:15px; margin:14px 0 0 0; padding-bottom:20px; color:#1E3A8A; }
+    .photo-h .sub { font-weight:400; font-size:13px; color:#6b7280; margin-left:6px; }
+    .photo-ok { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:4px 0 22px 0; font-size:14px; color:#065f46; font-weight:600; }
+    .photo-bad { background:#fff1f2; border:1px solid #fda4af; border-radius:8px; padding:10px 14px; margin:4px 0 22px 0; font-size:14px; color:#9f1239; }
+    .photo-bad ul { margin:6px 0 0 0; padding-left:20px; font-size:13px; }
+    .hint { font-size:13px; color:#6b7280; margin:2px 0 26px 2px; line-height:1.5; }
+    @media (max-width: 640px) { .st-cards { grid-template-columns:1fr; } }
+    </style>
+""", unsafe_allow_html=True)
+
+_left, center, _right = st.columns([1, 2.4, 1])
+with center:
+    st.markdown("<div class='pg-title'>💾 승객 수 파일 저장</div>", unsafe_allow_html=True)
+    st.markdown("<div class='pg-lead'>T2 보안검색 환승부 · 실시간 잡지에 쓰일 승객수 파일을 등록합니다</div>", unsafe_allow_html=True)
+
+    today_files, today_pax, today_flights, today_total = get_date_status(today_date_str)
+    tom_files, tom_pax, tom_flights, tom_total = get_date_status(tomorrow_date_str)
+
+    def status_line(files, flights, total):
+        if flights == 0:
+            return "<div class='n empty'><b>아직 등록된 파일 없음</b></div>"
+        return f"<div class='n'>파일 <b>{len(files)}</b>개 · <b>{flights:,}</b>편 · 총 <b>{total:,}</b>명</div>"
+
+    st.markdown(f"""
+        <div class='st-cards'>
+            <div class='st-card'>
+                <div class='d'>오늘 {today_label} <span class='tag tag-live'>실시간 잡지 표시 중</span></div>
+                {status_line(today_files, today_flights, today_total)}
+            </div>
+            <div class='st-card'>
+                <div class='d'>내일 {tomorrow_label} <span class='tag tag-wait'>등록 대기</span></div>
+                {status_line(tom_files, tom_flights, tom_total)}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 1. 날짜 선택
+    st.markdown("<div class='step-h'><span class='num'>1</span>어느 날짜 데이터를 올리나요?</div>", unsafe_allow_html=True)
+    upload_target = st.radio(
+        "업로드할 데이터 날짜",
+        [f"내일 ({tomorrow_label})", f"오늘 ({today_label})"],
+        index=0, horizontal=True, label_visibility="collapsed", key="upload_target"
+    )
+    is_today = upload_target.startswith("오늘")
+    target_date_str = today_date_str if is_today else tomorrow_date_str
+    target_word = "오늘" if is_today else "내일"
+    target_label = today_label if is_today else tomorrow_label
+
+    if is_today:
+        st.markdown("<div class='note-warn'>⚠ <b>오늘 데이터는 지금 실시간 잡지에 표시 중입니다.</b> 내일 파일을 여기에 올리면 실시간 잡지 승객수가 바뀝니다.</div>", unsafe_allow_html=True)
+
+    saved_files = today_files if is_today else tom_files
+    saved_pax_df = today_pax if is_today else tom_pax
+    # 오늘 데이터는 실시간 잡지에 표시 중이므로 항상 비밀번호로 잠금 (내일은 개수 제한 없이 자유롭게)
+    is_upload_locked = False
+
+    # 2. 파일 올리기
+    st.markdown("<div class='step-h'><span class='num'>2</span>승객수 파일 올리기<span class='sub'>.xls · .xlsx · .csv · DL 사진(.png .jpg) · 여러 개 가능</span></div>", unsafe_allow_html=True)
+    if is_today:
+        st.markdown("<div class='lock-box'><div class='t'>🔒 오늘 데이터는 잠겨 있습니다</div><div class='s'>실시간 잡지에 표시 중인 데이터라, 올리거나 고치려면 관리자 비밀번호가 필요합니다.</div></div>", unsafe_allow_html=True)
+        upload_pw = st.text_input("관리자 비밀번호", type="password", placeholder="비밀번호 4자리", key="upload_pw", label_visibility="collapsed")
+        if upload_pw == ADMIN_PW:
+            st.markdown("<div class='unlock-box'>🔓 잠금 해제됨 — 올린 파일은 오늘 데이터에 합쳐지고, 같은 편명은 새 값으로 바뀝니다.</div>", unsafe_allow_html=True)
+        else:
+            is_upload_locked = True
+            if upload_pw != "":
+                st.error("비밀번호가 일치하지 않습니다.")
+
+    uploaded_pax_files = st.file_uploader(
+        "승객수 파일 (.xls, .xlsx, .csv)",
+        accept_multiple_files=True,
+        key=f"pax_uploader_{st.session_state.get('uploader_ver', 0)}",
+        disabled=is_upload_locked,
+        label_visibility="collapsed"
+    )
+
+    # 📷 DL 사진: 읽은 결과를 표로 보여주고, 매니저가 확인·수정 (검증 통과해야 저장 가능)
+    dl_photo_results = {}
+    photo_problem = False
+    image_files = [f for f in (uploaded_pax_files or []) if is_image_file(f)]
+    for f in image_files:
+        img_bytes = f.getvalue()
+        hkey = hashlib.md5(img_bytes).hexdigest()[:10]
+        with st.spinner("📷 DL 사진을 읽는 중... (처음 한 번은 몇 초 걸려요)"):
+            rows, ttl, read_problems = read_dl_photo(img_bytes)
+
+        st.markdown(f"<div class='photo-h'>📷 {html.escape(f.name)} — 읽은 결과 <span class='sub'>사진과 다르면 표 칸을 눌러 직접 고치세요</span></div>", unsafe_allow_html=True)
+        st.image(img_bytes)
+
+        if rows:
+            base_df = pd.DataFrame(rows, columns=DL_COLS)
+        else:
+            base_df = pd.DataFrame({'편명': [''] * 6, '환승객': [None] * 6, '총 예약자': [None] * 6, '비율(%)': [None] * 6})
+            for msg in read_problems:
+                st.markdown(f"<div class='photo-bad'>⚠ {html.escape(msg)}</div>", unsafe_allow_html=True)
+        for c in ['환승객', '총 예약자', '비율(%)']:
+            base_df[c] = pd.to_numeric(base_df[c], errors='coerce').astype('float')
+
+        ver = st.session_state.get('uploader_ver', 0)
+        edited = st.data_editor(
+            base_df,
+            key=f"dl_edit_{ver}_{hkey}",
+            hide_index=True,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                '편명': st.column_config.TextColumn('편명'),
+                '환승객': st.column_config.NumberColumn('환승객', format="%d", min_value=0, step=1),
+                '총 예약자': st.column_config.NumberColumn('총 예약자', format="%d", min_value=0, step=1),
+                '비율(%)': st.column_config.NumberColumn('환승객 비율(%)', format="%.1f", min_value=0.0, max_value=100.0, step=0.1),
+            },
+        )
+        ttl_in = st.number_input(
+            "표 맨 오른쪽 TTL (환승객 합계)",
+            min_value=0, step=1,
+            value=int(ttl) if ttl else 0,
+            key=f"dl_ttl_{ver}_{hkey}",
+        )
+        clean, problems = check_dl_rows(edited, ttl_in)
+        if problems:
+            photo_problem = True
+            items = "".join([f"<li>{html.escape(p)}</li>" for p in problems])
+            st.markdown(f"<div class='photo-bad'>❌ <b>숫자가 맞지 않습니다. 사진을 보고 고쳐주세요.</b><ul>{items}</ul></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='photo-ok'>✅ DL {len(clean)}편 · 환승객 합계 {sum(c['승객수'] for c in clean):,}명 — 표의 비율·TTL과 모두 일치합니다</div>", unsafe_allow_html=True)
+        dl_photo_results[f.name] = clean
+
+    if photo_problem:
+        st.markdown("<div class='photo-bad'>💾 사진 결과에 빨간 표시가 남아 있어 아직 저장할 수 없습니다.</div>", unsafe_allow_html=True)
+
+
+    save_clicked = st.button(
+        f"💾 {target_word}({target_label}) 데이터로 저장",
+        type="primary",
+        use_container_width=True,
+        disabled=(not uploaded_pax_files) or is_upload_locked or photo_problem
+    )
+
+    if save_clicked and uploaded_pax_files and not is_upload_locked and not photo_problem:
+        with st.spinner(f"📤 파일을 처리하고 저장하는 중..."):
+            p_temp = []
+            new_file_names = []
+            for f in uploaded_pax_files:
+                if is_image_file(f): continue  # 사진은 아래에서 확인 표 값으로 저장
+                df = smart_read(f)
+                if df is not None:
+                    dl_df = parse_dl_pax(df)
+                    if dl_df is not None:
+                        p_temp.append(dl_df)
+                        new_file_names.append(f.name)
+                    else:
+                        f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+                        p_c = find_col(df, ['TS', 'PAX', '승객수', 'T/S', 'TTL', 'TOTAL'])
+                        r_c = find_col(df, ['FROM', 'ROUTE', '출발지'])
+                        if f_c and p_c:
+                            tmp = df[[f_c, p_c]].copy()
+                            if r_c: tmp['출발지'] = df[r_c].astype(str)
+                            tmp.columns = ['편명', '승객수', '출발지'] if r_c else ['편명', '승객수']
+                            tmp['편명'] = tmp['편명'].apply(clean_pax_flight_no)
+                            tmp = tmp[tmp['편명'].apply(is_valid_flight)]  # 엑셀 맨 아래 합계 줄 등 제외
+                            p_temp.append(tmp)
+                            new_file_names.append(f.name)
+
+            # 📷 DL 사진: 매니저가 확인한 표 값(편명·환승객)을 저장
+            for fname, clean in dl_photo_results.items():
+                if clean:
+                    p_temp.append(pd.DataFrame(clean))
+                    new_file_names.append(fname)
+
+            upload_ok = False
+            if p_temp:
+                combined_df = pd.concat(p_temp).drop_duplicates('편명')
+                upload_ok = update_pax_data(combined_df, target_date_str)
+                if upload_ok:
+                    update_file_list(new_file_names, target_date_str)
+
+        if upload_ok:
+            st.session_state["toast_msg"] = f"{target_word}({target_label}) 데이터 저장 완료!"
+        elif not p_temp:
+            st.session_state["toast_msg"] = "⚠ 인식 가능한 데이터를 찾지 못했습니다."
+        st.session_state["reset_to_tomorrow"] = True
+        st.rerun()
+
+    # 3. 등록된 파일 확인
+    st.markdown("<div class='step-h'><span class='num'>3</span>등록된 파일 확인</div>", unsafe_allow_html=True)
+    if not saved_pax_df.empty:
+        if saved_files:
+            file_lines = "".join([f"<div class='f'>• {html.escape(str(fname))}</div>" for fname in saved_files])
+        else:
+            file_lines = "<div class='f'>• 데이터 적용 완료</div>"
+        st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div>{file_lines}</div>", unsafe_allow_html=True)
+
+        # 오늘 데이터는 실시간 잡지에 표시 중이므로 비밀번호 잠금, 내일 데이터는 바로 비우기
+        if is_today:
+            with st.expander("🚨 오늘 데이터 강제 비우기 (관리자용)"):
+                st.markdown("<span style='font-size:12px; color:gray;'>실시간 잡지 표출에 문제가 생길 수 있으므로 가급적 지우지 마세요.</span>", unsafe_allow_html=True)
+
+                admin_pw = st.text_input("비밀번호 입력", type="password", placeholder="비밀번호 4자리", key="clear_pw")
+
+                if admin_pw == ADMIN_PW:
+                    if st.button("🗑 강제 비우기 실행", use_container_width=True, type="primary"):
+                        clear_date_data(target_date_str)
+                        st.session_state["toast_msg"] = "오늘 데이터를 강제로 비웠습니다."
+                        st.session_state["reset_to_tomorrow"] = True
+                        st.rerun()
+                elif admin_pw != "":
+                    st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            if st.button(f"🗑 내일({target_label}) 데이터 비우기", use_container_width=True):
+                clear_date_data(target_date_str)
+                st.session_state["toast_msg"] = "데이터를 모두 비웠습니다."
+                st.session_state["reset_to_tomorrow"] = True
+                st.rerun()
+    else:
+        st.markdown(f"<div class='reg-box'><div class='h'>📂 {target_word} {target_label} 등록 파일</div><div class='none'>아직 등록된 파일이 없습니다.</div></div>", unsafe_allow_html=True)
+
+    # 4. 내일 게이트 확인 (실시간 잡지로 이동만 함, 실시간 잡지 코드는 건드리지 않음)
+    st.markdown("<div class='step-h'><span class='num'>4</span>내일 게이트 확인</div>", unsafe_allow_html=True)
+    st.link_button("🛫 실시간 잡지에서 내일 게이트 보기", "https://live-magazine-t2.streamlit.app/?date=tomorrow", use_container_width=True)
+    st.markdown("<div class='hint'>누르면 실시간 잡지가 새 탭에서 <b>내일 게이트</b>로 바로 열립니다.</div>", unsafe_allow_html=True)
+
+    # 바로가기
+    st.markdown("<div class='link-h'>🔗 바로가기</div>", unsafe_allow_html=True)
+    l1, l2 = st.columns(2)
+    with l1:
+        st.link_button("📋 TEST", "https://t2-board.streamlit.app/", use_container_width=True)
+        st.link_button("📧 네이버 메일", "https://mail.naver.com", use_container_width=True)
+    with l2:
+        st.link_button("✈ 인천공항 도착편", "https://www.airport.kr/ap_ko/872/subview.do", use_container_width=True)
+        st.link_button("⏪ 이전 버전", "https://t2-magazine-old-dby3dpnaxzhq7eoitpqrm7.streamlit.app/", use_container_width=True)
