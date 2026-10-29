@@ -275,6 +275,84 @@ def smart_read(file):
     df.columns = [str(c) if pd.notna(c) else f"Unnamed_{i}" for i, c in enumerate(df.columns)]
     return df
      
+# --- [항공사 도착 예정시각(STA) 저장] ---
+# 승객수(pax_data)와 별도로 pax_time 탭에 편명별 항공사 시각을 저장. 실패해도 승객수 저장은 그대로 진행됨
+PAX_TIME_COLS = ['조회일자', '편명', '항공사시간', '파일명']
+
+def clean_sta(val):
+    """'05:10' · '0510' · '02:15 STA' · 시각 셀 → 'HH:MM'. 읽을 수 없으면 빈칸"""
+    try:
+        if val is None: return ""
+        if hasattr(val, 'hour') and hasattr(val, 'minute'):
+            return f"{int(val.hour):02d}:{int(val.minute):02d}"
+        if pd.isna(val): return ""
+        m = re.search(r'(?<!\d)([01]?\d|2[0-3]):?([0-5]\d)(?!\d)', str(val))
+        return f"{int(m.group(1)):02d}:{m.group(2)}" if m else ""
+    except Exception:
+        return ""
+
+def dl_header_sta(cell):
+    """DL 표 머리칸 'DL027 / ATL (0445L)'의 괄호 안 시각 → 'HH:MM'"""
+    m = re.search(r'\(\s*([0-9OQD]{2}):?([0-9OQD]{2})\s*L?\s*\)', str(cell).upper())
+    if not m: return ""
+    digits = re.sub(r'[OQD]', '0', m.group(1) + m.group(2))
+    return clean_sta(digits)
+
+def extract_dl_times(df, fname):
+    """DL 엑셀(편명이 머리칸에 있는 표)에서 편명별 STA"""
+    out = []
+    for cell in df.columns.tolist():
+        m = re.search(r'(DL\s*\d+)', str(cell), re.IGNORECASE)
+        if not m: continue
+        sta = dl_header_sta(cell)
+        if sta: out.append({'편명': clean_flight_no(m.group(1).replace(" ", "").upper()), '항공사시간': sta, '파일명': fname})
+    return pd.DataFrame(out, columns=['편명', '항공사시간', '파일명']).drop_duplicates('편명', keep='first')
+
+def extract_times(df, fname):
+    """편명 열 + STA(없으면 TIME) 열이 있는 엑셀에서 편명별 시각"""
+    f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
+    t_c = find_col(df, ['STA']) or find_col(df, ['TIME', '도착시간', '예정시간'])
+    if not f_c or not t_c or f_c == t_c:
+        return pd.DataFrame(columns=['편명', '항공사시간', '파일명'])
+    out = []
+    for flt, t in zip(df[f_c], df[t_c]):
+        fn = clean_pax_flight_no(flt)
+        sta = clean_sta(t)
+        if is_valid_flight(fn) and sta:
+            out.append({'편명': fn, '항공사시간': sta, '파일명': fname})
+    return pd.DataFrame(out, columns=['편명', '항공사시간', '파일명'])
+
+def safe_times(func, *args):
+    try:
+        return func(*args)
+    except Exception:
+        return pd.DataFrame(columns=['편명', '항공사시간', '파일명'])
+
+def update_pax_time(time_frames, target_date_str):
+    try:
+        frames = [t for t in time_frames if t is not None and not t.empty]
+        if not frames: return
+        new_df = pd.concat(frames, ignore_index=True)
+        new_df['조회일자'] = target_date_str
+        new_df = new_df[PAX_TIME_COLS]
+        spreadsheet = get_spreadsheet()
+        try:
+            sheet = spreadsheet.worksheet("pax_time")
+            data = sheet.get_all_values()
+            existing_df = pd.DataFrame(data[1:], columns=data[0]) if len(data) > 1 else pd.DataFrame(columns=PAX_TIME_COLS)
+        except gspread.exceptions.WorksheetNotFound:
+            sheet = spreadsheet.add_worksheet(title="pax_time", rows=1000, cols=6)
+            existing_df = pd.DataFrame(columns=PAX_TIME_COLS)
+        for c in PAX_TIME_COLS:
+            if c not in existing_df.columns: existing_df[c] = ""
+        combined = pd.concat([existing_df[PAX_TIME_COLS], new_df], ignore_index=True)
+        combined = combined[combined['조회일자'] >= today_date_str]
+        combined.drop_duplicates(subset=['조회일자', '편명'], keep='last', inplace=True)
+        sheet.clear()
+        sheet.update(range_name="A1", values=[PAX_TIME_COLS] + combined.fillna("").astype(str).values.tolist())
+    except Exception:
+        pass
+
 # --- [DL 환승객 표 사진 읽기] ---
 # 사진 읽기 프로그램(tesseract)이 없거나 실패해도 사이트는 그대로 동작하고, 표에 직접 입력하면 됨
 try:
@@ -349,6 +427,22 @@ def _ocr_read_once(img, psm):
         if pct is None or tot <= 0 or abs(ts / tot * 100 - pct) >= 0.15:
             problems.append(f"{fn}: 비율 불일치")
         out.append({'편명': fn, '환승객': ts, '총 예약자': tot, '비율(%)': pct})
+
+    # 편명 아래 괄호 시각(예: 0445L)을 STA로 함께 읽음 — 못 읽으면 빈칸
+    try:
+        xs = [f[1] for f in flights]
+        gap = min([b - a for a, b in zip(xs, xs[1:])] or [200])
+        sta_words = []
+        for t, x, y, hh in words:
+            m = re.search(r"\(\s*([0-9OQD]{2}):?([0-9OQD]{2})\s*[L1I|]?\s*\)?$", t.upper())
+            if m and y > fy:
+                sta_words.append((clean_sta(re.sub(r"[OQD]", "0", m.group(1) + m.group(2))), x))
+        for o in out:
+            fx = next(f[1] for f in flights if f[0] == o['편명'])
+            cands = [s for s in sta_words if s[0] and abs(s[1] - fx) < gap / 2]
+            o['STA'] = min(cands, key=lambda s: abs(s[1] - fx))[0] if cands else ""
+    except Exception:
+        pass
 
     # TTL = 환승객 줄에서 마지막 편명보다 오른쪽에 있는 숫자
     ttl = None
@@ -666,6 +760,7 @@ with center:
 
     # 📷 DL 사진: 읽은 결과를 표로 보여주고, 매니저가 확인·수정 (검증 통과해야 저장 가능)
     dl_photo_results = {}
+    photo_times = {}
     photo_problem = False
     image_files = [f for f in (uploaded_pax_files or []) if is_image_file(f)]
     for f in image_files:
@@ -673,6 +768,8 @@ with center:
         hkey = hashlib.md5(img_bytes).hexdigest()[:10]
         with st.spinner("📷 DL 사진을 읽는 중... (처음 한 번은 몇 초 걸려요)"):
             rows, ttl, read_problems = read_dl_photo(img_bytes)
+        photo_times[f.name] = pd.DataFrame([{'편명': r['편명'], '항공사시간': r.get('STA', ''), '파일명': f.name} for r in rows if r.get('STA')],
+                                           columns=['편명', '항공사시간', '파일명'])
 
         st.markdown(f"<div class='photo-h'>📷 {html.escape(f.name)} — 읽은 결과 <span class='sub'>사진과 다르면 표 칸을 눌러 직접 고치세요</span></div>", unsafe_allow_html=True)
         st.image(img_bytes)
@@ -729,6 +826,7 @@ with center:
     if save_clicked and uploaded_pax_files and not is_upload_locked and not photo_problem:
         with st.spinner(f"📤 파일을 처리하고 저장하는 중..."):
             p_temp = []
+            t_temp = []
             new_file_names = []
             for f in uploaded_pax_files:
                 if is_image_file(f): continue  # 사진은 아래에서 확인 표 값으로 저장
@@ -737,6 +835,7 @@ with center:
                     dl_df = parse_dl_pax(df)
                     if dl_df is not None:
                         p_temp.append(dl_df)
+                        t_temp.append(safe_times(extract_dl_times, df, f.name))
                         new_file_names.append(f.name)
                     else:
                         f_c = find_col(df, ['FLT', '편명', 'FLIGHT'])
@@ -749,12 +848,15 @@ with center:
                             tmp['편명'] = tmp['편명'].apply(clean_pax_flight_no)
                             tmp = tmp[tmp['편명'].apply(is_valid_flight)]  # 엑셀 맨 아래 합계 줄 등 제외
                             p_temp.append(tmp)
+                            t_temp.append(safe_times(extract_times, df, f.name))
                             new_file_names.append(f.name)
 
             # 📷 DL 사진: 매니저가 확인한 표 값(편명·환승객)을 저장
             for fname, clean in dl_photo_results.items():
                 if clean:
                     p_temp.append(pd.DataFrame(clean))
+                    pt = photo_times.get(fname)
+                    if pt is not None: t_temp.append(pt[pt['편명'].isin([c['편명'] for c in clean])])
                     new_file_names.append(fname)
 
             upload_ok = False
@@ -763,6 +865,7 @@ with center:
                 upload_ok = update_pax_data(combined_df, target_date_str)
                 if upload_ok:
                     update_file_list(new_file_names, target_date_str)
+                    update_pax_time(t_temp, target_date_str)
 
         if upload_ok:
             st.session_state["toast_msg"] = f"{target_word}({target_label}) 데이터 저장 완료!"
